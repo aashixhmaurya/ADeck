@@ -5,6 +5,7 @@
     font-style: normal;
     font-display: swap;
 }
+
 :root,
 [data-theme="light"] {
     --bg: #f2f1ee;
@@ -16,12 +17,15 @@
     --font: "Doto", monospace;
     --mono: var(--font);
     --rond: 100;
-    --zone-a: 300px;
+    --zone-a: 280px;
+    --zone-c: 320px;
     --topbar-h: 60px;
 }
+
 * {
     box-sizing: border-box;
 }
+
 body {
     margin: 0;
     background: var(--bg);
@@ -33,12 +37,15 @@ body {
     flex-direction: column;
     min-height: 100vh;
 }
+
 .mono {
     font-family: var(--mono);
 }
+
 .muted {
     color: var(--muted);
 }
+
 .topbar {
     display: grid;
     grid-template-columns: minmax(160px, 1fr) auto minmax(140px, 1fr);
@@ -47,20 +54,24 @@ body {
     height: var(--topbar-h);
     border-bottom: 1px solid var(--line);
 }
+
 .brand-name {
     font-weight: 800;
     letter-spacing: 0.18em;
     font-size: 20px;
 }
+
 .brand-sub {
     font-size: 12px;
     color: var(--muted);
 }
+
 .nav {
     display: flex;
     border-left: 1px solid var(--line);
     border-right: 1px solid var(--line);
 }
+
 .nav-btn {
     border: none;
     border-right: 1px solid var(--line);
@@ -70,39 +81,146 @@ body {
     color: var(--muted);
     cursor: pointer;
 }
+
 .nav-btn.active {
     background: var(--ink);
     color: var(--bg);
 }
+
 .page {
     flex: 1;
 }
+
 .layout {
     display: grid;
-    grid-template-columns: var(--zone-a) 1fr;
+    grid-template-columns: var(--zone-a) 1fr var(--zone-c);
     min-height: 0;
 }
+
 .zone {
     border-right: 1px solid var(--line);
     display: flex;
     flex-direction: column;
+    background: var(--bg);
 }
+
+.zone:last-child {
+    border-right: none;
+    border-left: 1px solid var(--line);
+}
+
 .zone-head {
     padding: 12px 14px;
     border-bottom: 1px solid var(--line);
     background: var(--bg-2);
 }
+
 .zone-head h2 {
     font-size: 13px;
     letter-spacing: 0.18em;
     margin: 0;
 }
+
 .device-stage {
     flex: 1;
     display: flex;
     align-items: center;
     justify-content: center;
 }
+
+.profile-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    flex: 1;
+    overflow-y: auto;
+}
+
+.profile-item {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--line);
+    cursor: pointer;
+    font-size: 14px;
+    text-transform: uppercase;
+}
+
+.profile-item:hover {
+    background: var(--bg-2);
+}
+
+.profile-item.active {
+    background: var(--ink);
+    color: var(--bg);
+}
+
+.add-btn {
+    padding: 12px;
+    background: var(--bg-2);
+    border: none;
+    border-top: 1px solid var(--line);
+    cursor: pointer;
+    font-weight: bold;
+    font-size: 12px;
+}
+
+.add-btn:hover {
+    background: var(--ink);
+    color: var(--bg);
+}
+
+.device-frame {
+    background: var(--ink);
+    padding: 16px;
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+}
+
+.slot-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 110px);
+    grid-template-rows: repeat(2, 90px);
+    gap: 10px;
+}
+
+.slot {
+    background: var(--bg);
+    border: 2px solid var(--line);
+    border-radius: 6px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.1s;
+}
+
+.slot:hover {
+    border-color: var(--accent);
+    transform: scale(0.98);
+}
+
+.slot.active {
+    border-color: var(--accent);
+    background: var(--bg-2);
+    box-shadow: inset 0 0 0 2px var(--accent);
+}
+
+.slot-num {
+    font-size: 14px;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-weight: 800;
+}
+
+.editor-panel {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    text-align: center;
+}
+
 .statusbar {
     border-top: 1px solid var(--line);
     padding: 10px;
