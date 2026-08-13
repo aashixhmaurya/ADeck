@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>ADeck — Local Hardware Configurator (DEV BUILD)</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Doto:ROND,wght@0..100,100..900&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+    <header class="topbar" role="banner">
+        <div class="brand">
+            <div class="brand-mark" aria-hidden="true"></div>
+            <div class="brand-text">
+                <span class="brand-name">ADECK</span>
+                <span class="brand-sub">DEV STAGE: UI WIREFRAME</span>
+            </div>
+        </div>
+        <nav class="nav" role="navigation">
+            <button type="button" class="nav-btn active">Dashboard</button>
+            <button type="button" class="nav-btn" disabled style="opacity: 0.3;">Profiles</button>
+            <button type="button" class="nav-btn" disabled style="opacity: 0.3;">Settings</button>
+        </nav>
+    </header>
+    <main id="page-dashboard" class="page layout" data-page="dashboard">
+        <aside class="zone zone-a">
+            <div class="zone-head">
+                <div class="zone-head-title">
+                    <h2>PROFILES</h2>
+                    <span class="zone-sub mono muted">WORKSPACE</span>
+                </div>
+            </div>
+            <ul id="profileList" class="profile-list">
+                <li class="empty-state">
+                    <strong>DATABASE</strong>
+                </li>
+            </ul>
+        </aside>
+        <section class="zone zone-b">
+            <div class="zone-head">
+                <div class="zone-head-title">
+                    <h2>HARDWARE PREVIEW</h2>
+                    <span class="zone-sub mono muted">REV.A</span>
+                </div>
+            </div>
+            <div class="device-stage">
+                <div class="device-frame" style="border: 2px dashed var(--line); padding: 40px; text-align: center;">
+                    <h3 class="mono muted">DEVICE STAGE RENDERER</h3>
+                </div>
+            </div>
+        </section>
+    </main>
+    <footer class="statusbar">
+        <div class="status-cell">
+            <span class="status-label">STATUS</span>
+            <span class="status-value mono" style="color: var(--accent);">BUILDING</span>
+        </div>
+    </footer>
+    <script src="./script.js"></script>
+</body>
+</html>

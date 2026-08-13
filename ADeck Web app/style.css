@@ -1,0 +1,110 @@
+@font-face {
+    font-family: "Doto";
+    src: url("https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/doto/Doto%5BROND%2Cwght%5D.ttf") format("truetype");
+    font-weight: 100 900;
+    font-style: normal;
+    font-display: swap;
+}
+:root,
+[data-theme="light"] {
+    --bg: #f2f1ee;
+    --bg-2: #e4e3df;
+    --ink: #000000;
+    --muted: #2e2e2a;
+    --line: #000000;
+    --accent: #8a6428;
+    --font: "Doto", monospace;
+    --mono: var(--font);
+    --rond: 100;
+    --zone-a: 300px;
+    --topbar-h: 60px;
+}
+* {
+    box-sizing: border-box;
+}
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font);
+    font-size: 16px;
+    font-weight: 500;
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+.mono {
+    font-family: var(--mono);
+}
+.muted {
+    color: var(--muted);
+}
+.topbar {
+    display: grid;
+    grid-template-columns: minmax(160px, 1fr) auto minmax(140px, 1fr);
+    align-items: center;
+    padding: 0 16px;
+    height: var(--topbar-h);
+    border-bottom: 1px solid var(--line);
+}
+.brand-name {
+    font-weight: 800;
+    letter-spacing: 0.18em;
+    font-size: 20px;
+}
+.brand-sub {
+    font-size: 12px;
+    color: var(--muted);
+}
+.nav {
+    display: flex;
+    border-left: 1px solid var(--line);
+    border-right: 1px solid var(--line);
+}
+.nav-btn {
+    border: none;
+    border-right: 1px solid var(--line);
+    background: transparent;
+    padding: 0 18px;
+    font-weight: 700;
+    color: var(--muted);
+    cursor: pointer;
+}
+.nav-btn.active {
+    background: var(--ink);
+    color: var(--bg);
+}
+.page {
+    flex: 1;
+}
+.layout {
+    display: grid;
+    grid-template-columns: var(--zone-a) 1fr;
+    min-height: 0;
+}
+.zone {
+    border-right: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+}
+.zone-head {
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--line);
+    background: var(--bg-2);
+}
+.zone-head h2 {
+    font-size: 13px;
+    letter-spacing: 0.18em;
+    margin: 0;
+}
+.device-stage {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.statusbar {
+    border-top: 1px solid var(--line);
+    padding: 10px;
+    background: var(--bg-2);
+}
