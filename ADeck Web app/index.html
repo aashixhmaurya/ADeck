@@ -12,6 +12,7 @@
 </head>
 
 <body>
+    <!-- top bar -->
     <header class="topbar" role="banner">
         <div class="brand">
             <div class="brand-mark" aria-hidden="true"></div>
@@ -23,7 +24,6 @@
 
         <nav class="nav" role="navigation" aria-label="Primary">
             <button type="button" class="nav-btn active" data-page="dashboard" aria-current="page">Dashboard</button>
-            <button type="button" class="nav-btn" data-page="profiles">Profiles</button>
             <button type="button" class="nav-btn" data-page="settings">Settings</button>
             <button type="button" class="nav-btn" data-page="about">About</button>
         </nav>
@@ -43,6 +43,7 @@
         </div>
     </header>
 
+    <!-- dashboard: profiles · hardware · slot editor -->
     <main id="page-dashboard" class="page layout" aria-label="Dashboard" data-page="dashboard">
         <aside class="zone zone-a" aria-label="Profile manager">
             <div class="zone-head">
@@ -81,7 +82,6 @@
             <div class="zone-head">
                 <div class="zone-head-title">
                     <h2>HARDWARE PREVIEW</h2>
-                    <span class="zone-sub mono muted">REV.A</span>
                 </div>
                 <span class="mono muted preview-meta" id="previewMeta">2.4&quot; TFT · 2×3</span>
             </div>
@@ -106,22 +106,7 @@
                         <div class="bezel-screw bezel-screw-bl" aria-hidden="true"></div>
                         <div class="bezel-screw bezel-screw-br" aria-hidden="true"></div>
                     </div>
-
-                    <div class="device-meta">
-                        <div class="device-name mono" id="deviceNameLabel">ADECK-UNO</div>
-                        <div class="device-info mono muted">
-                            <span id="deviceFirmware">Firmware —</span>
-                            <span class="sep" aria-hidden="true">//</span>
-                            <span id="devicePort">NOT CONNECTED</span>
-                        </div>
-                        <div class="device-status mono offline" id="deviceConnStatus">
-                            <span class="status-dot" aria-hidden="true"></span>
-                            <span id="deviceConnText">LOCAL ONLY</span>
-                        </div>
-                    </div>
                 </div>
-
-                <p class="hint mono">CLICK KEY TO EDIT · ARROWS TO MOVE · DEL TO CLEAR</p>
             </div>
         </section>
 
@@ -164,11 +149,11 @@
                 <label class="field">
           <span class="field-label">
             COMMAND / PATH
-            <em class="mono muted"><span id="commandCount">0</span> / 128</em>
+            <em class="mono muted"><span id="commandCount">0</span> / 18</em>
           </span>
           <div class="command-wrap">
             <span id="commandKindBadge" class="command-kind mono" data-kind="empty">—</span>
-            <input type="text" id="commandInput" class="mono command-input" maxlength="128" placeholder="make build" aria-describedby="commandHint" />
+            <input type="text" id="commandInput" class="mono command-input" maxlength="18" placeholder="make build" aria-describedby="commandHint" />
           </div>
           <span id="commandHint" class="field-hint mono muted">Shell command, URL, or file path</span>
           <span id="commandError" class="field-error mono" hidden role="alert"></span>
@@ -188,21 +173,7 @@
         </aside>
     </main>
 
-    <section id="page-profiles" class="page page-panel" hidden data-page="profiles" aria-label="Profiles page">
-        <div class="panel-inner">
-            <header class="panel-header">
-                <p class="panel-kicker mono muted">LIBRARY</p>
-                <h2 class="panel-title mono">PROFILES</h2>
-                <p class="panel-lead mono muted">Extended browser — soon. Full management lives on the Dashboard.</p>
-            </header>
-            <div class="panel-note mono">
-                <p>Create, rename, duplicate, import, and export from the left workspace on Dashboard.</p>
-                <p class="muted">This page is a placeholder for a future profile library view.</p>
-            </div>
-            <button type="button" class="ghost-btn" data-goto="dashboard">← DASHBOARD</button>
-        </div>
-    </section>
-
+    <!-- settings -->
     <section id="page-settings" class="page page-panel" hidden data-page="settings" aria-label="Settings">
         <div class="panel-inner panel-settings">
             <header class="panel-header">
@@ -226,7 +197,7 @@
             <span class="field-label">LANGUAGE</span>
             <select id="settingLanguage" name="language">
               <option value="en">English</option>
-              <option value="de" disabled>Deutsch</option>
+              <option value="de" disabled>Deutsch — SOON</option>
             </select>
           </label>
                 </fieldset>
@@ -263,8 +234,8 @@
             <span class="field-label">WIFI MODE</span>
             <select id="settingWifi" name="wifiMode" disabled>
               <option value="off">Off</option>
-              <option value="sta">Station</option>
-              <option value="ap">Access Point</option>
+              <option value="sta">Station — SOON</option>
+              <option value="ap">Access Point — SOON</option>
             </select>
             <span class="field-hint mono muted">NOT CONNECTED — needs Python bridge + UNO R4 WiFi</span>
           </label>
@@ -278,6 +249,7 @@
         </div>
     </section>
 
+    <!-- about -->
     <section id="page-about" class="page page-panel" hidden data-page="about" aria-label="About">
         <div class="panel-inner about-panel">
             <header class="panel-header">
@@ -315,6 +287,7 @@
         </div>
     </section>
 
+    <!-- sticky status + save -->
     <footer class="statusbar" role="contentinfo" aria-label="Status">
         <div class="status-cell" id="statusDirty" title="Unsaved changes">
             <span class="status-label">CHANGES</span>
@@ -324,23 +297,12 @@
             <span class="status-label">PROFILE</span>
             <span class="status-value mono" id="footerProfile">—</span>
         </div>
-        <div class="status-cell" title="Selected key">
-            <span class="status-label">KEY</span>
-            <span class="status-value mono" id="footerKey">—</span>
-        </div>
-        <div class="status-cell" title="Local storage">
-            <span class="status-label">STORAGE</span>
-            <span class="status-value mono" id="footerStorage">OK</span>
-        </div>
-        <div class="status-cell status-cell-grow" title="Current time">
-            <span class="status-label">TIME</span>
-            <span class="status-value mono" id="footerClock">--:--:--</span>
-        </div>
         <button id="saveBtn" class="save-btn status-save" type="button" title="Save &amp; generate JSON (Ctrl+S)">
       SAVE &amp; JSON
     </button>
     </footer>
 
+    <!-- config export modal -->
     <div class="modal" id="jsonModal" hidden role="dialog" aria-modal="true" aria-labelledby="jsonModalTitle">
         <div class="modal-panel modal-panel-wide">
             <div class="modal-head">
@@ -366,7 +328,6 @@
             <input type="file" id="importJsonFile" accept=".json,application/json" hidden />
         </div>
     </div>
-
     <div id="toastHost" class="toast-host" aria-live="polite" aria-relevant="additions"></div>
     <script src="./script.js"></script>
 </body>
