@@ -1,4 +1,4 @@
-/* ADeck — local macropad configurator. Vanilla JS, open in the browser. */
+/* ADeck — open index.html, no build step */
 (() => {
   "use strict";
 
@@ -9,10 +9,9 @@
   const COMMAND_MAX = 18;
   const PROFILE_NAME_MAX = 32;
   const STORAGE_KEY = "adeck.cfg.v1";
-  const LEGACY_STORAGE_KEY = "macropad.cfg.v1";
+  const LEGACY_STORAGE_KEY = "macropad.cfg.v1"; // old key, still read once
   const SETTINGS_KEY = "adeck.settings.v1";
 
-  // Palette shown on keys + in the editor swatches
   const COLORS = [
     { name: "ash", hex: "#c5c5c3" },
     { name: "steel", hex: "#255a8c" },
@@ -23,8 +22,7 @@
   ];
   const DEFAULT_COLOR = COLORS[0].hex;
 
-  // 2×3 grid: up/down jump a row (±2), left/right move within the row (±1).
-  // Row edges are handled separately in moveSlotSelection.
+  // 2x3 grid neighbours for arrow keys
   const ARROW_DELTA = {
     ArrowUp: -2,
     ArrowDown: 2,
@@ -103,7 +101,7 @@
     return profile.slots.filter((s) => s.label || s.command).length;
   }
 
-  // Accepts current slots[] or older buttons[] payloads
+  // slots[] now; buttons[] still ok from older exports
   function normalizeProfile(raw) {
     return {
       id: raw.id || newProfileId(),
@@ -148,6 +146,7 @@
     slotColorPreview: $("slotColorPreview"),
     slotColorHex: $("slotColorHex"),
     editorForm: $("editorForm"),
+    settingsForm: $("settingsForm"),
     labelInput: $("labelInput"),
     labelCount: $("labelCount"),
     commandInput: $("commandInput"),
@@ -188,9 +187,18 @@
     aboutVersion: $("aboutVersion"),
     aboutBuild: $("aboutBuild"),
     toastHost: $("toastHost"),
+    appDialog: $("appDialog"),
+    dialogKicker: $("dialogKicker"),
+    dialogTitle: $("dialogTitle"),
+    dialogMessage: $("dialogMessage"),
+    dialogInputWrap: $("dialogInputWrap"),
+    dialogInputLabel: $("dialogInputLabel"),
+    dialogInput: $("dialogInput"),
+    dialogCancel: $("dialogCancel"),
+    dialogConfirm: $("dialogConfirm"),
   };
 
-  // --- seed / persistence ---
+  let dialogState = null;
 
   function seed() {
     const dev = makeProfile("Dev Mode");
@@ -198,7 +206,7 @@
     dev.slots[1] = { index: 1, label: "TEST", command: "npm test", color: "#255a8c" };
     dev.slots[2] = { index: 2, label: "GIT", command: "git status", color: "#2c3238" };
     dev.slots[3] = { index: 3, label: "LOGS", command: "tail -f app.log", color: "#c5c5c3" };
-    dev.slots[4] = { index: 4, label: "DEPLOY", command: "./scripts/deploy.sh", color: "#b42318" };
+    dev.slots[4] = { index: 4, label: "DEPLOY", command: "./scripts/deploy", color: "#b42318" };
     dev.slots[5] = { index: 5, label: "KILL", command: "pkill node", color: "#0a0a0a" };
     state.profiles.push(dev);
     state.profiles.push(makeProfile("Gaming"));
@@ -226,7 +234,7 @@
         ? Math.max(0, Math.min(SLOTS_PER_PROFILE - 1, parsed.activeSlotIndex))
         : 0;
       state.storageOk = true;
-      if (fromLegacy) persistProfiles(); // rewrite into current key
+      if (fromLegacy) persistProfiles();
       return true;
     } catch (_) {
       state.storageOk = false;
@@ -257,9 +265,7 @@
       const raw = localStorage.getItem(SETTINGS_KEY);
       if (!raw) return;
       state.settings = { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
-    } catch (_) {
-      // keep defaults
-    }
+    } catch (_) {}
   }
 
   function persistSettings() {
@@ -368,7 +374,6 @@
     updateStatusBar();
   }
 
-  // Shared refresh after clicking / arrowing between keys
   function refreshSlotUI() {
     renderGrid();
     renderEditor();
@@ -376,7 +381,6 @@
     updateStatusBar();
   }
 
-  // After typing in label or command
   function afterSlotFieldEdit() {
     renderGrid();
     renderProfiles();
@@ -385,12 +389,19 @@
     persistProfiles();
   }
 
-  function applyTheme(theme) {
+  function applyTheme(theme, animate = true) {
     const mode = theme === "dark" ? "dark" : "light";
     state.settings.theme = mode;
+    if (animate) {
+      document.body.classList.add("theme-switching");
+      window.clearTimeout(applyTheme._t);
+      applyTheme._t = window.setTimeout(() => {
+        document.body.classList.remove("theme-switching");
+      }, 480);
+    }
     document.documentElement.setAttribute("data-theme", mode);
     document.body.setAttribute("data-theme", mode);
-    if (els.themeToggleLabel) els.themeToggleLabel.textContent = mode === "dark" ? "NIGHT" : "DAY";
+    if (els.themeToggleLabel) els.themeToggleLabel.textContent = mode === "dark" ? "DARK" : "LIGHT";
     if (els.themeToggleBtn) {
       els.themeToggleBtn.setAttribute("aria-pressed", mode === "dark" ? "true" : "false");
     }
@@ -401,35 +412,134 @@
     const next = state.settings.theme === "dark" ? "light" : "dark";
     applyTheme(next);
     persistSettings();
-    toast(next === "dark" ? "NIGHT MODE" : "DAY MODE", "info");
+    toast(next === "dark" ? "DARK MODE" : "LIGHT MODE", "info");
+  }
+
+  let toastTimer = null;
+  const TOAST_LIFE = 3000;
+  const TOAST_OUT = 240;
+
+  function dismissToast(node) {
+    if (!node || !node.parentNode || node.classList.contains("is-leaving")) return;
+    if (toastTimer) {
+      clearTimeout(toastTimer);
+      toastTimer = null;
+    }
+    node.classList.add("is-leaving");
+    setTimeout(() => {
+      if (node.parentNode) node.remove();
+    }, TOAST_OUT);
   }
 
   function toast(message, type) {
     if (!els.toastHost) return;
-    const node = document.createElement("div");
-    node.className = "toast " + (type || "info");
-    node.setAttribute("role", "status");
 
-    const msg = document.createElement("span");
-    msg.className = "toast-msg";
-    msg.textContent = message;
+    if (toastTimer) {
+      clearTimeout(toastTimer);
+      toastTimer = null;
+    }
 
-    const close = document.createElement("button");
-    close.type = "button";
-    close.className = "toast-close";
-    close.setAttribute("aria-label", "Dismiss");
-    close.textContent = "×";
-    close.addEventListener("click", () => node.remove());
+    const existing = els.toastHost.querySelector(".toast");
 
-    node.appendChild(msg);
-    node.appendChild(close);
-    els.toastHost.appendChild(node);
-    setTimeout(() => {
-      if (node.parentNode) node.remove();
-    }, 3000);
+    const mount = () => {
+      els.toastHost.innerHTML = "";
+
+      const node = document.createElement("div");
+      node.className = "toast " + (type || "info");
+      node.setAttribute("role", "status");
+
+      const msg = document.createElement("span");
+      msg.className = "toast-msg";
+      msg.textContent = message;
+
+      const close = document.createElement("button");
+      close.type = "button";
+      close.className = "toast-close";
+      close.setAttribute("aria-label", "Dismiss");
+      close.textContent = "×";
+      close.addEventListener("click", () => dismissToast(node));
+
+      node.appendChild(msg);
+      node.appendChild(close);
+      els.toastHost.appendChild(node);
+      toastTimer = setTimeout(() => dismissToast(node), TOAST_LIFE);
+    };
+
+    if (existing) {
+      existing.classList.add("is-leaving");
+      setTimeout(mount, 180);
+    } else {
+      mount();
+    }
   }
 
-  // Hook for a future Python / serial bridge — leave stubs in place
+  function closeDialog(result) {
+    if (!dialogState) return;
+    const finish = dialogState.finish;
+    dialogState = null;
+    els.appDialog.hidden = true;
+    finish(result);
+  }
+
+  function showDialog(options) {
+    const mode = options.mode === "prompt" ? "prompt" : "confirm";
+    return new Promise((resolve) => {
+      dialogState = {
+        mode,
+        finish: resolve,
+      };
+
+      if (options.kicker === "") {
+        els.dialogKicker.hidden = true;
+      } else {
+        els.dialogKicker.hidden = false;
+        els.dialogKicker.textContent = options.kicker || (mode === "prompt" ? "INPUT" : "CONFIRM");
+      }
+      els.dialogTitle.textContent = options.title || "—";
+      els.dialogMessage.textContent = options.message || "";
+      els.dialogMessage.hidden = !(options.message || "");
+
+      const isPrompt = mode === "prompt";
+      els.dialogInputWrap.hidden = !isPrompt;
+      if (!isPrompt) els.dialogInput.value = "";
+      if (isPrompt) {
+        els.dialogInputLabel.textContent = options.inputLabel || "VALUE";
+        els.dialogInput.maxLength = options.maxLength || 255;
+        els.dialogInput.value = options.defaultValue != null ? String(options.defaultValue) : "";
+      }
+
+      els.dialogCancel.hidden = options.hideCancel === true;
+      els.dialogConfirm.textContent = options.confirmLabel || (isPrompt ? "OK" : "CONFIRM");
+      els.dialogConfirm.className = options.danger ? "ghost-btn danger" : "save-btn";
+
+      els.appDialog.hidden = false;
+      requestAnimationFrame(() => {
+        if (isPrompt) {
+          els.dialogInput.focus();
+          els.dialogInput.select();
+        } else {
+          els.dialogConfirm.focus();
+        }
+      });
+    });
+  }
+
+  function askConfirm(options) {
+    return showDialog({ ...options, mode: "confirm" }).then((ok) => !!ok);
+  }
+
+  function askPrompt(options) {
+    return showDialog({ ...options, mode: "prompt" }).then((value) => {
+      if (value === null || value === false) return null;
+      return String(value);
+    });
+  }
+
+  function isDialogOpen() {
+    return !!dialogState;
+  }
+
+  // stubs for later — python / serial bridge
   window.ADeckBridge = {
     connectDevice() {},
     disconnectDevice() {},
@@ -509,8 +619,8 @@
       const empty = document.createElement("li");
       empty.className = "empty-state";
       empty.innerHTML = filter
-        ? "<strong>NO MATCHES</strong>Try another profile name."
-        : "<strong>NO PROFILES</strong>Create your first configuration profile.";
+        ? "<strong>NO MATCHES</strong> Try another profile name."
+        : "<strong>NO PROFILES</strong> Create your first configuration profile.";
       els.profileList.appendChild(empty);
     }
     updateStatusBar();
@@ -672,14 +782,20 @@
       "slot-state-badge mono " + (isEmpty ? "is-empty" : "is-configured");
     els.slotColorHex.textContent = colorName(s.color) + "  " + s.color;
     els.slotColorPreview.style.background = s.color;
-    els.labelInput.value = s.label;
-    els.commandInput.value = s.command;
+    const label = String(s.label || "").slice(0, LABEL_MAX);
+    const command = String(s.command || "").slice(0, COMMAND_MAX);
+    if (label !== s.label || command !== s.command) {
+      s.label = label;
+      s.command = command;
+    }
+    els.labelInput.value = label;
+    els.commandInput.value = command;
     els.colorSelect.value = s.color;
-    els.labelCount.textContent = String(s.label.length);
-    els.commandCount.textContent = String(s.command.length);
-    updateCommandKindUI(s.command);
+    els.labelCount.textContent = String(label.length);
+    els.commandCount.textContent = String(command.length);
+    updateCommandKindUI(command);
 
-    const v = validateCommand(s.command);
+    const v = validateCommand(command);
     els.commandError.hidden = v.ok;
     els.commandError.textContent = v.message;
     els.commandInput.classList.toggle("invalid", !v.ok);
@@ -736,10 +852,16 @@
     if (id === "about") renderAbout();
   }
 
-  // --- profile actions ---
-
-  function addProfile() {
-    const name = prompt("New profile name:", "Profile " + (state.profiles.length + 1));
+  async function addProfile() {
+    const name = await askPrompt({
+      kicker: "",
+      title: "NEW PROFILE",
+      message: "Name this workspace profile.",
+      defaultValue: "Profile " + (state.profiles.length + 1),
+      maxLength: PROFILE_NAME_MAX,
+      inputLabel: "PROFILE NAME",
+      confirmLabel: "CREATE",
+    });
     if (name === null) return;
     const p = makeProfile(name.trim().slice(0, PROFILE_NAME_MAX) || "Untitled");
     state.profiles.push(p);
@@ -751,10 +873,18 @@
     toast('PROFILE "' + p.name.toUpperCase() + '" CREATED', "success");
   }
 
-  function renameProfile() {
+  async function renameProfile() {
     const p = activeProfile();
     if (!p) return;
-    const name = prompt("Rename profile:", p.name);
+    const name = await askPrompt({
+      kicker: "",
+      title: "RENAME PROFILE",
+      message: "Update the active profile name.",
+      defaultValue: p.name,
+      maxLength: PROFILE_NAME_MAX,
+      inputLabel: "PROFILE NAME",
+      confirmLabel: "RENAME",
+    });
     if (name === null) return;
     p.name = name.trim().slice(0, PROFILE_NAME_MAX) || p.name;
     renderProfiles();
@@ -778,14 +908,21 @@
     toast('DUPLICATED AS "' + copy.name.toUpperCase() + '"', "success");
   }
 
-  function deleteProfile() {
+  async function deleteProfile() {
     if (state.profiles.length <= 1) {
       toast("CANNOT DELETE LAST PROFILE", "error");
       return;
     }
     const p = activeProfile();
     if (!p) return;
-    if (!confirm('Delete profile "' + p.name + '"?')) return;
+    const ok = await askConfirm({
+      kicker: "",
+      title: "DELETE PROFILE",
+      message: "Remove this profile from your workspace? This cannot be undone.",
+      confirmLabel: "DELETE",
+      danger: true,
+    });
+    if (!ok) return;
     state.profiles = state.profiles.filter((x) => x.id !== p.id);
     state.activeProfileId = state.profiles[0].id;
     state.activeSlotIndex = 0;
@@ -839,10 +976,19 @@
     }
   }
 
-  function clearActiveSlot(skipConfirm) {
+  async function clearActiveSlot(skipConfirm) {
     const s = activeSlot();
     if (!s) return;
-    if (!skipConfirm && !confirm("Clear slot K" + pad2(s.index + 1) + "?")) return;
+    if (!skipConfirm) {
+      const ok = await askConfirm({
+        kicker: "SLOT",
+        title: "CLEAR SLOT",
+        message: "Clear key K" + pad2(s.index + 1) + "? Label, command, and color will reset.",
+        confirmLabel: "CLEAR",
+        danger: true,
+      });
+      if (!ok) return;
+    }
     s.label = "";
     s.command = "";
     s.color = DEFAULT_COLOR;
@@ -867,8 +1013,6 @@
     refreshSlotUI();
     persistProfiles();
   }
-
-  // --- config JSON (what the Python bridge will consume later) ---
 
   function buildConfigObject() {
     return {
@@ -953,16 +1097,13 @@
     try {
       await navigator.clipboard.writeText(text);
     } catch (_) {
-      // older browsers
       const ta = document.createElement("textarea");
       ta.value = text;
       document.body.appendChild(ta);
       ta.select();
       try {
         document.execCommand("copy");
-      } catch (__) {
-        /* ignore */
-      }
+      } catch (__) {}
       ta.remove();
     }
     toast("COPIED", "success");
@@ -982,7 +1123,13 @@
       const imported = data.profiles.map((p) =>
         normalizeProfile({ name: p.name, slots: p.slots || p.buttons })
       );
-      if (!confirm("Replace all local profiles with imported JSON (" + imported.length + " profiles)?")) {
+      if (!(await askConfirm({
+        kicker: "IMPORT",
+        title: "REPLACE PROFILES",
+        message: "Replace all local profiles with imported JSON (" + imported.length + " profiles)?",
+        confirmLabel: "REPLACE",
+        danger: true,
+      }))) {
         return;
       }
       state.profiles = imported;
@@ -1025,8 +1172,15 @@
     toast("SETTINGS SAVED", "success");
   }
 
-  function resetSettings() {
-    if (!confirm("Reset settings to defaults?")) return;
+  async function resetSettings() {
+    const ok = await askConfirm({
+      kicker: "SETTINGS",
+      title: "RESET DEFAULTS",
+      message: "Restore all settings to factory defaults?",
+      confirmLabel: "RESET",
+      danger: true,
+    });
+    if (!ok) return;
     state.settings = { ...DEFAULT_SETTINGS, defaultProfileId: state.activeProfileId };
     applyTheme(state.settings.theme);
     persistSettings();
@@ -1038,6 +1192,9 @@
   function wireEvents() {
     els.navBtns.forEach((btn) => btn.addEventListener("click", () => showPage(btn.dataset.page)));
     els.gotoBtns.forEach((btn) => btn.addEventListener("click", () => showPage(btn.dataset.goto)));
+
+    els.editorForm.addEventListener("submit", (e) => e.preventDefault());
+    if (els.settingsForm) els.settingsForm.addEventListener("submit", (e) => e.preventDefault());
 
     els.addProfileBtn.addEventListener("click", addProfile);
     els.renameProfileBtn.addEventListener("click", renameProfile);
@@ -1098,6 +1255,19 @@
       if (e.target === els.jsonModal) closeJsonModal();
     });
 
+    els.dialogCancel.addEventListener("click", () => closeDialog(dialogState && dialogState.mode === "prompt" ? null : false));
+    els.dialogConfirm.addEventListener("click", () => {
+      if (!dialogState) return;
+      if (dialogState.mode === "prompt") closeDialog(els.dialogInput.value);
+      else closeDialog(true);
+    });
+    els.dialogInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        closeDialog(els.dialogInput.value);
+      }
+    });
+
     els.settingBrightness.addEventListener("input", (e) => {
       els.brightnessVal.textContent = e.target.value + "%";
     });
@@ -1108,7 +1278,7 @@
       els.settingTheme.addEventListener("change", (e) => {
         applyTheme(e.target.value);
         persistSettings();
-        toast(e.target.value === "dark" ? "NIGHT MODE" : "DAY MODE", "info");
+        toast(e.target.value === "dark" ? "DARK MODE" : "LIGHT MODE", "info");
       });
     }
 
@@ -1116,11 +1286,19 @@
   }
 
   function onGlobalKeydown(e) {
-    if (e.key === "Escape" && !els.jsonModal.hidden) {
-      e.preventDefault();
-      closeJsonModal();
-      return;
+    if (e.key === "Escape") {
+      if (isDialogOpen()) {
+        e.preventDefault();
+        closeDialog(dialogState.mode === "prompt" ? null : false);
+        return;
+      }
+      if (!els.jsonModal.hidden) {
+        e.preventDefault();
+        closeJsonModal();
+        return;
+      }
     }
+    if (isDialogOpen()) return;
     if ((e.ctrlKey || e.metaKey) && (e.key === "s" || e.key === "S")) {
       e.preventDefault();
       saveAndShowJson();
@@ -1165,7 +1343,7 @@
     state.device.connected = false;
     state.device.port = "NOT CONNECTED";
     state.device.firmware = "—";
-    applyTheme(state.settings.theme || "light");
+    applyTheme(state.settings.theme || "light", false);
     renderColorOptions();
     renderAll();
     renderAbout();

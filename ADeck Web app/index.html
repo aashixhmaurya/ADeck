@@ -2,142 +2,142 @@
 <html lang="en">
 
 <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>ADeck — Local Hardware Configurator</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Doto:ROND,wght@0..100,100..900&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="./style.css" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>ADeck — Local Hardware Configurator</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Doto:ROND,wght@0..100,100..900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="./style.css" />
 </head>
 
 <body>
-    <!-- top bar -->
-    <header class="topbar" role="banner">
-        <div class="brand">
-            <div class="brand-mark" aria-hidden="true"></div>
-            <div class="brand-text">
-                <span class="brand-name">ADECK</span>
-                <span class="brand-sub">LOCAL CONFIGURATOR</span>
-            </div>
-        </div>
+  <!-- topbar -->
+  <header class="topbar" role="banner">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true"></div>
+      <div class="brand-text">
+        <span class="brand-name">ADECK</span>
+        <span class="brand-sub">LOCAL CONFIGURATOR</span>
+      </div>
+    </div>
 
-        <nav class="nav" role="navigation" aria-label="Primary">
-            <button type="button" class="nav-btn active" data-page="dashboard" aria-current="page">Dashboard</button>
-            <button type="button" class="nav-btn" data-page="settings">Settings</button>
-            <button type="button" class="nav-btn" data-page="about">About</button>
-        </nav>
+    <nav class="nav" role="navigation" aria-label="Primary">
+      <button type="button" class="nav-btn active" data-page="dashboard" aria-current="page">Dashboard</button>
+      <button type="button" class="nav-btn" data-page="settings">Settings</button>
+      <button type="button" class="nav-btn" data-page="about">About</button>
+    </nav>
 
-        <div class="topbar-meta" aria-live="polite">
-            <button type="button" id="themeToggleBtn" class="theme-toggle" title="Toggle day / night mode" aria-label="Toggle day and night mode" aria-pressed="false">
+    <div class="topbar-meta" aria-live="polite">
+      <button type="button" id="themeToggleBtn" class="theme-toggle" title="Toggle light / dark mode" aria-label="Toggle light and dark mode" aria-pressed="false">
         <span class="theme-toggle-icon" aria-hidden="true">◐</span>
-        <span id="themeToggleLabel">DAY</span>
+        <span id="themeToggleLabel">LIGHT</span>
       </button>
-            <span class="sep" aria-hidden="true"></span>
-            <span class="device-state">
+      <span class="sep" aria-hidden="true"></span>
+      <span class="device-state">
         <span class="state-dot" id="topStateDot" aria-hidden="true"></span>
-            <span id="statusLine" class="conn-pill">READY</span>
-            </span>
-            <span class="sep" aria-hidden="true"></span>
-            <span id="clock" class="top-clock">--:--:--</span>
+        <span id="statusLine" class="conn-pill">READY</span>
+      </span>
+      <span class="sep" aria-hidden="true"></span>
+      <span id="clock" class="top-clock">--:--:--</span>
+    </div>
+  </header>
+
+  <!-- dashboard -->
+  <main id="page-dashboard" class="page layout" aria-label="Dashboard" data-page="dashboard">
+    <aside class="zone zone-a" aria-label="Profile manager">
+      <div class="zone-head">
+        <div class="zone-head-title">
+          <h2>PROFILES</h2>
+          <span class="zone-sub mono muted">WORKSPACE</span>
         </div>
-    </header>
+        <div class="zone-head-actions">
+          <span id="profileCount" class="mono count-badge" aria-live="polite">0</span>
+          <button id="addProfileBtn" class="icon-btn" title="New profile (Ctrl+N)" aria-label="Add profile">+</button>
+        </div>
+      </div>
 
-    <!-- dashboard: profiles · hardware · slot editor -->
-    <main id="page-dashboard" class="page layout" aria-label="Dashboard" data-page="dashboard">
-        <aside class="zone zone-a" aria-label="Profile manager">
-            <div class="zone-head">
-                <div class="zone-head-title">
-                    <h2>PROFILES</h2>
-                    <span class="zone-sub mono muted">WORKSPACE</span>
-                </div>
-                <div class="zone-head-actions">
-                    <span id="profileCount" class="mono count-badge" aria-live="polite">0</span>
-                    <button id="addProfileBtn" class="icon-btn" title="New profile (Ctrl+N)" aria-label="Add profile">+</button>
-                </div>
+      <div class="profile-search-wrap">
+        <label class="sr-only" for="profileSearch">Search profiles</label>
+        <input type="search" id="profileSearch" class="profile-search mono" placeholder="SEARCH…" autocomplete="off" />
+      </div>
+
+      <ul id="profileList" class="profile-list" role="listbox" aria-label="Profiles"></ul>
+
+      <div class="zone-foot zone-foot-stack">
+        <div class="btn-row">
+          <button id="renameProfileBtn" class="ghost-btn" type="button">RENAME</button>
+          <button id="duplicateProfileBtn" class="ghost-btn" type="button">DUPLICATE</button>
+        </div>
+        <div class="btn-row">
+          <button id="exportProfileBtn" class="ghost-btn" type="button">EXPORT</button>
+          <button id="importProfileBtn" class="ghost-btn" type="button">IMPORT</button>
+          <button id="deleteProfileBtn" class="ghost-btn danger" type="button">DELETE</button>
+        </div>
+        <input type="file" id="importProfileFile" accept=".json,application/json" hidden />
+      </div>
+    </aside>
+
+    <section class="zone zone-b" aria-label="Hardware preview">
+      <div class="zone-head">
+        <div class="zone-head-title">
+          <h2>HARDWARE PREVIEW</h2>
+        </div>
+        <span class="mono muted preview-meta" id="previewMeta">2.4-inch TFT LCD Display ILI9341</span>
+      </div>
+
+      <div class="device-stage">
+        <div class="device-frame" role="img" aria-label="ADeck hardware preview">
+          <div class="device-bezel">
+            <div class="bezel-screw bezel-screw-tl" aria-hidden="true"></div>
+            <div class="bezel-screw bezel-screw-tr" aria-hidden="true"></div>
+            <div class="device-screen" id="deviceScreen">
+              <div class="screen-chrome">
+                <span class="screen-title mono">ADECK</span>
+                <span class="screen-mid mono" id="screenActiveKey">K—</span>
+                <span class="screen-conn mono" id="deviceConnBadge">LOCAL</span>
+              </div>
+              <div class="grid" id="buttonGrid" role="group" aria-label="Macro keys"></div>
+              <div class="screen-footer mono">
+                <span>6 KEYS</span>
+                <span id="screenProfileName">—</span>
+              </div>
             </div>
+            <div class="bezel-screw bezel-screw-bl" aria-hidden="true"></div>
+            <div class="bezel-screw bezel-screw-br" aria-hidden="true"></div>
+          </div>
+        </div>
+      </div>
+    </section>
 
-            <div class="profile-search-wrap">
-                <label class="sr-only" for="profileSearch">Search profiles</label>
-                <input type="search" id="profileSearch" class="profile-search mono" placeholder="SEARCH…" autocomplete="off" />
-            </div>
+    <aside class="zone zone-c" aria-label="Slot editor">
+      <div class="zone-head">
+        <div class="zone-head-title">
+          <h2>SLOT EDITOR</h2>
+          <span class="zone-sub mono muted">INSPECTOR</span>
+        </div>
+        <span class="mono muted" id="activeSlotTag">—</span>
+      </div>
 
-            <ul id="profileList" class="profile-list" role="listbox" aria-label="Profiles"></ul>
-
-            <div class="zone-foot zone-foot-stack">
-                <div class="btn-row">
-                    <button id="renameProfileBtn" class="ghost-btn" type="button">RENAME</button>
-                    <button id="duplicateProfileBtn" class="ghost-btn" type="button">DUPLICATE</button>
-                </div>
-                <div class="btn-row">
-                    <button id="exportProfileBtn" class="ghost-btn" type="button">EXPORT</button>
-                    <button id="importProfileBtn" class="ghost-btn" type="button">IMPORT</button>
-                    <button id="deleteProfileBtn" class="ghost-btn danger" type="button">DELETE</button>
-                </div>
-                <input type="file" id="importProfileFile" accept=".json,application/json" hidden />
-            </div>
-        </aside>
-
-        <section class="zone zone-b" aria-label="Hardware preview">
-            <div class="zone-head">
-                <div class="zone-head-title">
-                    <h2>HARDWARE PREVIEW</h2>
-                </div>
-                <span class="mono muted preview-meta" id="previewMeta">2.4&quot; TFT · 2×3</span>
-            </div>
-
-            <div class="device-stage">
-                <div class="device-frame" role="img" aria-label="ADeck hardware preview">
-                    <div class="device-bezel">
-                        <div class="bezel-screw bezel-screw-tl" aria-hidden="true"></div>
-                        <div class="bezel-screw bezel-screw-tr" aria-hidden="true"></div>
-                        <div class="device-screen" id="deviceScreen">
-                            <div class="screen-chrome">
-                                <span class="screen-title mono">ADECK</span>
-                                <span class="screen-mid mono" id="screenActiveKey">K—</span>
-                                <span class="screen-conn mono" id="deviceConnBadge">LOCAL</span>
-                            </div>
-                            <div class="grid" id="buttonGrid" role="group" aria-label="Macro keys"></div>
-                            <div class="screen-footer mono">
-                                <span>6 KEYS</span>
-                                <span id="screenProfileName">—</span>
-                            </div>
-                        </div>
-                        <div class="bezel-screw bezel-screw-bl" aria-hidden="true"></div>
-                        <div class="bezel-screw bezel-screw-br" aria-hidden="true"></div>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <aside class="zone zone-c" aria-label="Slot editor">
-            <div class="zone-head">
-                <div class="zone-head-title">
-                    <h2>SLOT EDITOR</h2>
-                    <span class="zone-sub mono muted">INSPECTOR</span>
-                </div>
-                <span class="mono muted" id="activeSlotTag">—</span>
-            </div>
-
-            <div class="slot-info" id="slotInfo" aria-live="polite">
-                <div class="slot-info-hero">
-                    <div class="slot-info-keyblock">
-                        <span class="mono muted slot-info-kicker">KEY</span>
-                        <span id="slotInfoKey" class="slot-info-key mono">—</span>
-                    </div>
-                    <span id="slotInfoState" class="slot-state-badge mono">—</span>
-                </div>
-                <div class="slot-info-row">
-                    <span class="mono muted">COLOR</span>
-                    <span id="slotInfoColor" class="mono color-preview-wrap">
+      <div class="slot-info" id="slotInfo" aria-live="polite">
+        <div class="slot-info-hero">
+          <div class="slot-info-keyblock">
+            <span class="mono muted slot-info-kicker">KEY</span>
+            <span id="slotInfoKey" class="slot-info-key mono">—</span>
+          </div>
+          <span id="slotInfoState" class="slot-state-badge mono">—</span>
+        </div>
+        <div class="slot-info-row">
+          <span class="mono muted">COLOR</span>
+          <span id="slotInfoColor" class="mono color-preview-wrap">
             <span id="slotColorPreview" class="color-preview" aria-hidden="true"></span>
-                    <span id="slotColorHex">—</span>
-                    </span>
-                </div>
-            </div>
+            <span id="slotColorHex">—</span>
+          </span>
+        </div>
+      </div>
 
-            <form id="editorForm" class="editor" autocomplete="off">
-                <label class="field">
+      <form id="editorForm" class="editor" autocomplete="off">
+        <label class="field">
           <span class="field-label">
             LABEL
             <em class="mono muted"><span id="labelCount">0</span> / 10</em>
@@ -146,7 +146,7 @@
           <span id="labelHint" class="field-hint mono muted">Shown on device key</span>
         </label>
 
-                <label class="field">
+        <label class="field">
           <span class="field-label">
             COMMAND / PATH
             <em class="mono muted"><span id="commandCount">0</span> / 18</em>
@@ -159,60 +159,60 @@
           <span id="commandError" class="field-error mono" hidden role="alert"></span>
         </label>
 
-                <div class="field">
-                    <span class="field-label">COLOR</span>
-                    <label class="sr-only" for="colorSelect">Slot color</label>
-                    <select id="colorSelect" aria-label="Slot color"></select>
-                    <div class="swatch-row" id="swatchRow" role="group" aria-label="Color swatches"></div>
-                </div>
+        <div class="field">
+          <span class="field-label">COLOR</span>
+          <label class="sr-only" for="colorSelect">Slot color</label>
+          <select id="colorSelect" aria-label="Slot color"></select>
+          <div class="swatch-row" id="swatchRow" role="group" aria-label="Color swatches"></div>
+        </div>
 
-                <div class="editor-foot">
-                    <button type="button" id="clearSlotBtn" class="ghost-btn danger">CLEAR SLOT</button>
-                </div>
-            </form>
-        </aside>
-    </main>
+        <div class="editor-foot">
+          <button type="button" id="clearSlotBtn" class="ghost-btn danger">CLEAR SLOT</button>
+        </div>
+      </form>
+    </aside>
+  </main>
 
-    <!-- settings -->
-    <section id="page-settings" class="page page-panel" hidden data-page="settings" aria-label="Settings">
-        <div class="panel-inner panel-settings">
-            <header class="panel-header">
-                <p class="panel-kicker mono muted">PREFERENCES</p>
-                <h2 class="panel-title mono">SETTINGS</h2>
-                <p class="panel-lead mono muted">Local UI preferences. Device options stay offline until a bridge exists.</p>
-            </header>
+  <!-- settings -->
+  <section id="page-settings" class="page page-panel" hidden data-page="settings" aria-label="Settings">
+    <div class="panel-inner panel-settings">
+      <header class="panel-header">
+        <p class="panel-kicker mono muted">PREFERENCES</p>
+        <h2 class="panel-title mono">SETTINGS</h2>
+        <p class="panel-lead mono muted">Local UI preferences. Device options stay offline until a bridge exists.</p>
+      </header>
 
-            <form id="settingsForm" class="settings-form" autocomplete="off">
-                <fieldset class="settings-group">
-                    <legend class="mono">APPEARANCE</legend>
-                    <label class="field">
+      <form id="settingsForm" class="settings-form" autocomplete="off">
+        <fieldset class="settings-group">
+          <legend class="mono">APPEARANCE</legend>
+          <label class="field">
             <span class="field-label">THEME</span>
             <select id="settingTheme" name="theme">
               <option value="light">Day — Light</option>
               <option value="dark">Night — Dark</option>
             </select>
-            <span class="field-hint mono muted">Also available from the top bar DAY / NIGHT control</span>
+            <span class="field-hint mono muted">Also available from the top bar LIGHT / DARK control</span>
           </label>
-                    <label class="field">
+          <label class="field">
             <span class="field-label">LANGUAGE</span>
             <select id="settingLanguage" name="language">
               <option value="en">English</option>
               <option value="de" disabled>Deutsch — SOON</option>
             </select>
           </label>
-                </fieldset>
+        </fieldset>
 
-                <fieldset class="settings-group">
-                    <legend class="mono">DEVICE</legend>
-                    <label class="field">
+        <fieldset class="settings-group">
+          <legend class="mono">DEVICE</legend>
+          <label class="field">
             <span class="field-label">DEVICE NAME</span>
             <input type="text" id="settingDeviceName" name="deviceName" maxlength="24" placeholder="ADECK-UNO" />
           </label>
-                    <label class="field">
+          <label class="field">
             <span class="field-label">BRIGHTNESS <em class="mono muted" id="brightnessVal">80%</em></span>
             <input type="range" id="settingBrightness" name="brightness" min="10" max="100" step="5" value="80" />
           </label>
-                    <label class="field">
+          <label class="field">
             <span class="field-label">SLEEP TIMEOUT</span>
             <select id="settingSleep" name="sleepTimeout">
               <option value="30">30 seconds</option>
@@ -222,15 +222,15 @@
             </select>
             <span class="field-hint mono muted">PLACEHOLDER — applied when device bridge is connected</span>
           </label>
-                    <label class="field">
+          <label class="field">
             <span class="field-label">DEFAULT PROFILE</span>
             <select id="settingDefaultProfile" name="defaultProfile"></select>
           </label>
-                </fieldset>
+        </fieldset>
 
-                <fieldset class="settings-group">
-                    <legend class="mono">CONNECTIVITY</legend>
-                    <label class="field">
+        <fieldset class="settings-group">
+          <legend class="mono">CONNECTIVITY</legend>
+          <label class="field">
             <span class="field-label">WIFI MODE</span>
             <select id="settingWifi" name="wifiMode" disabled>
               <option value="off">Off</option>
@@ -239,97 +239,121 @@
             </select>
             <span class="field-hint mono muted">NOT CONNECTED — needs Python bridge + UNO R4 WiFi</span>
           </label>
-                </fieldset>
+        </fieldset>
 
-                <div class="settings-actions">
-                    <button type="button" id="settingsSaveBtn" class="save-btn">SAVE SETTINGS</button>
-                    <button type="button" id="settingsResetBtn" class="ghost-btn">RESET DEFAULTS</button>
-                </div>
-            </form>
+        <div class="settings-actions">
+          <button type="button" id="settingsSaveBtn" class="save-btn">SAVE SETTINGS</button>
+          <button type="button" id="settingsResetBtn" class="ghost-btn">RESET DEFAULTS</button>
         </div>
-    </section>
+      </form>
+    </div>
+  </section>
 
-    <!-- about -->
-    <section id="page-about" class="page page-panel" hidden data-page="about" aria-label="About">
-        <div class="panel-inner about-panel">
-            <header class="panel-header">
-                <p class="panel-kicker mono muted">PROJECT</p>
-                <h2 class="panel-title mono">ADECK</h2>
-                <p class="panel-lead">DIY hardware macro pad configurator</p>
-            </header>
+  <!-- about -->
+  <section id="page-about" class="page page-panel" hidden data-page="about" aria-label="About">
+    <div class="panel-inner about-panel">
+      <header class="panel-header">
+        <p class="panel-kicker mono muted">PROJECT</p>
+        <h2 class="panel-title mono">ADECK</h2>
+        <p class="panel-lead">DIY hardware macro pad configurator</p>
+      </header>
 
-            <p class="about-statement mono">Built for a custom Arduino-based macro interface.</p>
+      <p class="about-statement mono">Built for a custom Arduino-based macro interface.</p>
 
-            <dl class="about-list mono">
-                <div class="about-row">
-                    <dt>Version</dt>
-                    <dd id="aboutVersion">1.2.0</dd>
-                </div>
-                <div class="about-row">
-                    <dt>Build</dt>
-                    <dd id="aboutBuild">2026.08.13-local</dd>
-                </div>
-                <div class="about-row">
-                    <dt>Hardware</dt>
-                    <dd>Arduino UNO R4 WiFi + 2.4&quot; TFT + 6 keys (2×3)</dd>
-                </div>
-                <div class="about-row">
-                    <dt>License</dt>
-                    <dd>MIT</dd>
-                </div>
-            </dl>
-
-            <p class="mono muted about-note">
-                This dashboard configures profiles locally. Open index.html — no build step, no server.
-            </p>
-
-            <button type="button" class="ghost-btn" data-goto="dashboard">← DASHBOARD</button>
+      <dl class="about-list mono">
+        <div class="about-row">
+          <dt>Version</dt>
+          <dd id="aboutVersion">1.2.0</dd>
         </div>
-    </section>
+        <div class="about-row">
+          <dt>Build</dt>
+          <dd id="aboutBuild">2026.08.13-local</dd>
+        </div>
+        <div class="about-row">
+          <dt>Hardware</dt>
+          <dd>Arduino UNO R4 WiFi + 2.4&quot; TFT + 6 keys (2×3)</dd>
+        </div>
+        <div class="about-row">
+          <dt>License</dt>
+          <dd>MIT</dd>
+        </div>
+      </dl>
 
-    <!-- sticky status + save -->
-    <footer class="statusbar" role="contentinfo" aria-label="Status">
-        <div class="status-cell" id="statusDirty" title="Unsaved changes">
-            <span class="status-label">CHANGES</span>
-            <span class="status-value mono" id="footerDirty">SAVED</span>
-        </div>
-        <div class="status-cell" title="Current profile">
-            <span class="status-label">PROFILE</span>
-            <span class="status-value mono" id="footerProfile">—</span>
-        </div>
-        <button id="saveBtn" class="save-btn status-save" type="button" title="Save &amp; generate JSON (Ctrl+S)">
+      <p class="mono muted about-note">
+        This dashboard configures profiles locally. Open index.html — no build step, no server.
+      </p>
+
+      <button type="button" class="ghost-btn" data-goto="dashboard">← DASHBOARD</button>
+    </div>
+  </section>
+
+  <!-- status -->
+  <footer class="statusbar" role="contentinfo" aria-label="Status">
+    <div class="status-cell" id="statusDirty" title="Unsaved changes">
+      <span class="status-label">CHANGES</span>
+      <span class="status-value mono" id="footerDirty">SAVED</span>
+    </div>
+    <div class="status-cell" title="Current profile">
+      <span class="status-label">PROFILE</span>
+      <span class="status-value mono" id="footerProfile">—</span>
+    </div>
+    <button id="saveBtn" class="save-btn status-save" type="button" title="Save &amp; generate JSON (Ctrl+S)">
       SAVE &amp; JSON
     </button>
-    </footer>
+  </footer>
 
-    <!-- config export modal -->
-    <div class="modal" id="jsonModal" hidden role="dialog" aria-modal="true" aria-labelledby="jsonModalTitle">
-        <div class="modal-panel modal-panel-wide">
-            <div class="modal-head">
-                <div class="modal-title-block">
-                    <span class="mono muted modal-kicker">EXPORT</span>
-                    <h3 id="jsonModalTitle">CONFIG.JSON</h3>
-                </div>
-                <div class="modal-actions">
-                    <button id="formatJsonBtn" class="ghost-btn" type="button">FORMAT</button>
-                    <button id="validateJsonBtn" class="ghost-btn" type="button">VALIDATE</button>
-                    <button id="copyJsonBtn" class="ghost-btn" type="button">COPY</button>
-                    <button id="downloadJsonBtn" class="ghost-btn" type="button">DOWNLOAD</button>
-                    <button id="importJsonBtn" class="ghost-btn" type="button">IMPORT</button>
-                    <button id="closeModalBtn" class="ghost-btn danger" type="button" aria-label="Close modal">CLOSE</button>
-                </div>
-            </div>
-            <label class="sr-only" for="jsonOutput">JSON configuration</label>
-            <textarea id="jsonOutput" class="json-out mono" spellcheck="false" aria-label="JSON configuration output"></textarea>
-            <div class="modal-foot">
-                <span class="mono muted" id="jsonModalStatus">Ready for Python bridge</span>
-                <span class="mono muted" id="jsonCharCount">0 bytes</span>
-            </div>
-            <input type="file" id="importJsonFile" accept=".json,application/json" hidden />
+  <!-- confirm / prompt -->
+  <div class="modal" id="appDialog" hidden role="dialog" aria-modal="true" aria-labelledby="dialogTitle">
+    <div class="modal-panel dialog-panel">
+      <div class="modal-head">
+        <div class="modal-title-block">
+          <span class="mono muted modal-kicker" id="dialogKicker">CONFIRM</span>
+          <h3 id="dialogTitle">—</h3>
         </div>
+      </div>
+      <div class="dialog-body">
+        <p id="dialogMessage" class="mono dialog-message"></p>
+        <label class="field dialog-field" id="dialogInputWrap" hidden>
+          <span class="field-label" id="dialogInputLabel">NAME</span>
+          <input type="text" id="dialogInput" class="mono" autocomplete="off" />
+        </label>
+      </div>
+      <div class="dialog-foot">
+        <button type="button" id="dialogCancel" class="ghost-btn">CANCEL</button>
+        <button type="button" id="dialogConfirm" class="save-btn">CONFIRM</button>
+      </div>
     </div>
-    <div id="toastHost" class="toast-host" aria-live="polite" aria-relevant="additions"></div>
-    <script src="./script.js"></script>
+  </div>
+
+  <!-- json export -->
+  <div class="modal" id="jsonModal" hidden role="dialog" aria-modal="true" aria-labelledby="jsonModalTitle">
+    <div class="modal-panel modal-panel-wide">
+      <div class="modal-head">
+        <div class="modal-title-block">
+          <span class="mono muted modal-kicker">EXPORT</span>
+          <h3 id="jsonModalTitle">CONFIG.JSON</h3>
+        </div>
+        <div class="modal-actions">
+          <button id="formatJsonBtn" class="ghost-btn" type="button">FORMAT</button>
+          <button id="validateJsonBtn" class="ghost-btn" type="button">VALIDATE</button>
+          <button id="copyJsonBtn" class="ghost-btn" type="button">COPY</button>
+          <button id="downloadJsonBtn" class="ghost-btn" type="button">DOWNLOAD</button>
+          <button id="importJsonBtn" class="ghost-btn" type="button">IMPORT</button>
+          <button id="closeModalBtn" class="ghost-btn danger" type="button" aria-label="Close modal">CLOSE</button>
+        </div>
+      </div>
+      <label class="sr-only" for="jsonOutput">JSON configuration</label>
+      <textarea id="jsonOutput" class="json-out mono" spellcheck="false" aria-label="JSON configuration output"></textarea>
+      <div class="modal-foot">
+        <span class="mono muted" id="jsonModalStatus">Ready for Python bridge</span>
+        <span class="mono muted" id="jsonCharCount">0 bytes</span>
+      </div>
+      <input type="file" id="importJsonFile" accept=".json,application/json" hidden />
+    </div>
+  </div>
+
+  <div id="toastHost" class="toast-host" aria-live="polite" aria-relevant="additions"></div>
+  <script src="./script.js"></script>
 </body>
 
 </html>
