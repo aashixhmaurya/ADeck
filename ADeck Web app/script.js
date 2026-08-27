@@ -1,4 +1,4 @@
-/* ADeck — open index.html, no build step */
+/* adeck - open index.html, no build */
 (() => {
   "use strict";
 
@@ -9,7 +9,7 @@
   const COMMAND_MAX = 18;
   const PROFILE_NAME_MAX = 32;
   const STORAGE_KEY = "adeck.cfg.v1";
-  const LEGACY_STORAGE_KEY = "macropad.cfg.v1"; // old key, still read once
+  const LEGACY_STORAGE_KEY = "macropad.cfg.v1"; // legacy storage key
   const SETTINGS_KEY = "adeck.settings.v1";
 
   const COLORS = [
@@ -22,7 +22,18 @@
   ];
   const DEFAULT_COLOR = COLORS[0].hex;
 
-  // 2x3 grid neighbours for arrow keys
+  function normalizeHex(hex) {
+    const raw = String(hex || "").trim().toLowerCase();
+    if (/^#[0-9a-f]{6}$/.test(raw)) return raw;
+    if (/^[0-9a-f]{6}$/.test(raw)) return "#" + raw;
+    return DEFAULT_COLOR;
+  }
+
+  function isPresetColor(hex) {
+    return COLORS.some((c) => c.hex === hex);
+  }
+
+  // 2x3 grid moves
   const ARROW_DELTA = {
     ArrowUp: -2,
     ArrowDown: 2,
@@ -81,7 +92,7 @@
       index: i,
       label: String(s.label || "").slice(0, LABEL_MAX),
       command: String(s.command || "").slice(0, COMMAND_MAX),
-      color: COLORS.some((c) => c.hex === s.color) ? s.color : DEFAULT_COLOR,
+      color: normalizeHex(s.color),
     }));
     return p;
   }
@@ -101,19 +112,18 @@
     return profile.slots.filter((s) => s.label || s.command).length;
   }
 
-  // slots[] now; buttons[] still ok from older exports
+  // also accepts old buttons[] exports
   function normalizeProfile(raw) {
     return {
       id: raw.id || newProfileId(),
       name: String(raw.name || "Untitled").slice(0, PROFILE_NAME_MAX),
       slots: Array.from({ length: SLOTS_PER_PROFILE }, (_, i) => {
         const s = (raw.slots && raw.slots[i]) || (raw.buttons && raw.buttons[i]) || {};
-        const color = s.color || DEFAULT_COLOR;
         return {
           index: i,
           label: String(s.label || "").slice(0, LABEL_MAX),
           command: String(s.command || "").slice(0, COMMAND_MAX),
-          color: COLORS.some((c) => c.hex === color) ? color : DEFAULT_COLOR,
+          color: normalizeHex(s.color),
         };
       }),
     };
@@ -153,8 +163,9 @@
     commandCount: $("commandCount"),
     commandError: $("commandError"),
     commandKindBadge: $("commandKindBadge"),
-    colorSelect: $("colorSelect"),
     swatchRow: $("swatchRow"),
+    customColorBtn: $("customColorBtn"),
+    customColorInput: $("customColorInput"),
     clearSlotBtn: $("clearSlotBtn"),
     statusLine: $("statusLine"),
     clock: $("clock"),
@@ -539,7 +550,7 @@
     return !!dialogState;
   }
 
-  // stubs for later — python / serial bridge
+  // serial bridge stubs
   window.ADeckBridge = {
     connectDevice() {},
     disconnectDevice() {},
@@ -699,15 +710,9 @@
   }
 
   function renderColorOptions() {
-    els.colorSelect.innerHTML = "";
     els.swatchRow.innerHTML = "";
 
     COLORS.forEach((c) => {
-      const opt = document.createElement("option");
-      opt.value = c.hex;
-      opt.textContent = c.name.toUpperCase() + "  " + c.hex;
-      els.colorSelect.appendChild(opt);
-
       const sw = document.createElement("button");
       sw.type = "button";
       sw.className = "swatch";
@@ -729,14 +734,21 @@
       n.classList.toggle("selected", on);
       n.setAttribute("aria-pressed", on ? "true" : "false");
     });
+    const custom = !!hex && !isPresetColor(hex);
+    els.customColorBtn.classList.toggle("is-custom", custom);
+    if (hex) {
+      els.customColorBtn.style.setProperty("--picked-color", hex);
+      els.customColorInput.value = hex;
+    } else {
+      els.customColorBtn.style.removeProperty("--picked-color");
+    }
   }
 
   function applyColor(hex) {
     const s = activeSlot();
     if (!s) return;
-    s.color = hex;
-    els.colorSelect.value = hex;
-    highlightSwatch(hex);
+    s.color = normalizeHex(hex);
+    highlightSwatch(s.color);
     renderGrid();
     renderEditor();
     markDirty(true);
@@ -750,8 +762,8 @@
 
     els.labelInput.disabled = disabled;
     els.commandInput.disabled = disabled;
-    els.colorSelect.disabled = disabled;
     els.clearSlotBtn.disabled = disabled;
+    els.customColorBtn.disabled = disabled;
     els.swatchRow.querySelectorAll(".swatch").forEach((sw) => {
       sw.disabled = disabled;
     });
@@ -790,7 +802,6 @@
     }
     els.labelInput.value = label;
     els.commandInput.value = command;
-    els.colorSelect.value = s.color;
     els.labelCount.textContent = String(label.length);
     els.commandCount.textContent = String(command.length);
     updateCommandKindUI(command);
@@ -1236,7 +1247,13 @@
       afterSlotFieldEdit();
     });
 
-    els.colorSelect.addEventListener("change", (e) => applyColor(e.target.value));
+    els.customColorBtn.addEventListener("click", () => {
+      if (els.customColorBtn.disabled) return;
+      els.customColorInput.click();
+    });
+    els.customColorInput.addEventListener("input", (e) => applyColor(e.target.value));
+    els.customColorInput.addEventListener("change", (e) => applyColor(e.target.value));
+
     els.clearSlotBtn.addEventListener("click", () => clearActiveSlot(false));
     els.saveBtn.addEventListener("click", saveAndShowJson);
     els.closeModalBtn.addEventListener("click", closeJsonModal);

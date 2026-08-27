@@ -12,7 +12,6 @@
 </head>
 
 <body>
-  <!-- topbar -->
   <header class="topbar" role="banner">
     <div class="brand">
       <div class="brand-mark" aria-hidden="true"></div>
@@ -43,7 +42,6 @@
     </div>
   </header>
 
-  <!-- dashboard -->
   <main id="page-dashboard" class="page layout" aria-label="Dashboard" data-page="dashboard">
     <aside class="zone zone-a" aria-label="Profile manager">
       <div class="zone-head">
@@ -160,9 +158,14 @@
         </label>
 
         <div class="field">
-          <span class="field-label">COLOR</span>
-          <label class="sr-only" for="colorSelect">Slot color</label>
-          <select id="colorSelect" aria-label="Slot color"></select>
+          <div class="color-field-head">
+            <span class="field-label">COLOR</span>
+            <div class="custom-color-wrap">
+              <span class="custom-color-label">CUSTOM</span>
+              <button type="button" id="customColorBtn" class="custom-color-btn" aria-label="Custom color" title="Custom color"></button>
+              <input type="color" id="customColorInput" class="custom-color-input" value="#255a8c" tabindex="-1" aria-hidden="true" />
+            </div>
+          </div>
           <div class="swatch-row" id="swatchRow" role="group" aria-label="Color swatches"></div>
         </div>
 
@@ -173,7 +176,6 @@
     </aside>
   </main>
 
-  <!-- settings -->
   <section id="page-settings" class="page page-panel" hidden data-page="settings" aria-label="Settings">
     <div class="panel-inner panel-settings">
       <header class="panel-header">
@@ -249,7 +251,6 @@
     </div>
   </section>
 
-  <!-- about -->
   <section id="page-about" class="page page-panel" hidden data-page="about" aria-label="About">
     <div class="panel-inner about-panel">
       <header class="panel-header">
@@ -287,7 +288,6 @@
     </div>
   </section>
 
-  <!-- status -->
   <footer class="statusbar" role="contentinfo" aria-label="Status">
     <div class="status-cell" id="statusDirty" title="Unsaved changes">
       <span class="status-label">CHANGES</span>
@@ -302,7 +302,6 @@
     </button>
   </footer>
 
-  <!-- confirm / prompt -->
   <div class="modal" id="appDialog" hidden role="dialog" aria-modal="true" aria-labelledby="dialogTitle">
     <div class="modal-panel dialog-panel">
       <div class="modal-head">
@@ -325,7 +324,6 @@
     </div>
   </div>
 
-  <!-- json export -->
   <div class="modal" id="jsonModal" hidden role="dialog" aria-modal="true" aria-labelledby="jsonModalTitle">
     <div class="modal-panel modal-panel-wide">
       <div class="modal-head">
