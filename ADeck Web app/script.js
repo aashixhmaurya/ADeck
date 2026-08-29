@@ -6,7 +6,7 @@
   const BUILD_NUMBER = "2026.08.13-local";
   const SLOTS_PER_PROFILE = 6;
   const LABEL_MAX = 10;
-  const COMMAND_MAX = 18;
+  const COMMAND_MAX = 256;
   const PROFILE_NAME_MAX = 32;
   const STORAGE_KEY = "adeck.cfg.v1";
   const LEGACY_STORAGE_KEY = "macropad.cfg.v1"; // legacy storage key
@@ -99,6 +99,26 @@
 
   function activeProfile() {
     return state.profiles.find((p) => p.id === state.activeProfileId) || null;
+  }
+
+  function profileNameExists(name, exceptId) {
+    const folded = String(name || "").trim().toLowerCase();
+    return state.profiles.some(
+      (profile) =>
+        profile.id !== exceptId && profile.name.trim().toLowerCase() === folded
+    );
+  }
+
+  function uniqueProfileName(name) {
+    const base = String(name || "Untitled").slice(0, PROFILE_NAME_MAX);
+    if (!profileNameExists(base)) return base;
+    let suffix = 2;
+    let candidate;
+    do {
+      const suffixText = " " + suffix++;
+      candidate = base.slice(0, PROFILE_NAME_MAX - suffixText.length) + suffixText;
+    } while (profileNameExists(candidate));
+    return candidate;
   }
 
   function activeSlot() {
@@ -269,6 +289,30 @@
       toast("STORAGE UNAVAILABLE", "error");
     }
     updateStatusBar();
+  }
+
+  function hydrateConfig(config) {
+    if (!config || !Array.isArray(config.profiles) || config.profiles.length === 0) {
+      return false;
+    }
+    const profiles = config.profiles.map(normalizeProfile);
+    const activeName = String(config.active_profile || "");
+    const active =
+      profiles.find((profile) => profile.name === activeName) ||
+      profiles.find((profile) => profile.id === config.activeProfileId) ||
+      profiles[0];
+    state.profiles = profiles;
+    state.activeProfileId = active.id;
+    state.activeSlotIndex = 0;
+    if (config.settings && typeof config.settings === "object") {
+      state.settings = { ...state.settings, ...config.settings };
+      const defaultName = config.settings.defaultProfile;
+      const defaultProfile = profiles.find((profile) => profile.name === defaultName);
+      if (defaultProfile) state.settings.defaultProfileId = defaultProfile.id;
+    }
+    persistProfiles();
+    persistSettings();
+    return true;
   }
 
   function loadSettings() {
@@ -550,14 +594,145 @@
     return !!dialogState;
   }
 
-  // serial bridge stubs
-  window.ADeckBridge = {
-    connectDevice() {},
-    disconnectDevice() {},
-    sendConfig() {},
-    receiveStatus() {},
-    syncProfiles() {},
-  };
+  const localBridge =
+    /^https?:$/.test(window.location.protocol) &&
+    ["127.0.0.1", "localhost"].includes(window.location.hostname)
+      ? window.location.origin
+      : "http://127.0.0.1:8765";
+
+  async function fetchWithTimeout(url, options, timeoutMs) {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...(options || {}), signal: controller.signal });
+    } finally {
+      window.clearTimeout(timer);
+    }
+  }
+
+  async function postConfigToBridge(config) {
+    try {
+      const res = await fetchWithTimeout(
+        localBridge + "/api/config",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(config),
+        },
+        7000
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) {
+        return {
+          ok: false,
+          reachable: true,
+          error: data.error || "Could not save config",
+        };
+      }
+      return { ...data, reachable: true };
+    } catch (error) {
+      return { ok: false, reachable: false, error: error.message };
+    }
+  }
+
+  async function fetchConfigFromBridge() {
+    try {
+      const response = await fetchWithTimeout(
+        localBridge + "/api/config",
+        { cache: "no-store" },
+        2500
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.ok) {
+        return { ok: false, reachable: true, error: data.error || "Could not load config" };
+      }
+      return { ...data, reachable: true };
+    } catch (error) {
+      return { ok: false, reachable: false, error: error.message };
+    }
+  }
+
+  function syncWasAcknowledged(result) {
+    return (
+      result.sync_state === "synced" &&
+      !!result.transaction_id &&
+      result.acknowledged_transaction_id === result.transaction_id
+    );
+  }
+
+  async function saveAndShowJson() {
+    const config = buildConfigObject();
+    persistProfiles();
+    els.statusLine.textContent = "SAVING";
+
+    const result = await postConfigToBridge(config);
+    if (!result.ok) {
+      if (state.storageOk) {
+        markDirty(false);
+        toast(
+          result.reachable ? "SAVED LOCALLY — BACKEND REJECTED" : "SAVED LOCALLY — SERVICE OFFLINE",
+          result.reachable ? "error" : "info"
+        );
+      } else {
+        markDirty(true);
+        toast("SAVE FAILED", "error");
+      }
+      return;
+    }
+
+    markDirty(false);
+    if (syncWasAcknowledged(result)) {
+      toast("SAVED — SYNCHRONIZED", "success");
+    } else if (result.sync_state === "offline") {
+      toast("SAVED — ADECK OFFLINE", "info");
+    } else {
+      toast("SAVED — SYNC FAILED", "error");
+    }
+    pollBridgeStatus();
+  }
+
+  let profileSyncChain = Promise.resolve();
+
+  function syncActiveProfile() {
+    const config = buildConfigObject();
+    profileSyncChain = profileSyncChain.then(async () => {
+      const result = await postConfigToBridge(config);
+      if (!result.ok) {
+        toast(
+          result.reachable ? "PROFILE SAVE REJECTED" : "PROFILE SAVED LOCALLY — SERVICE OFFLINE",
+          result.reachable ? "error" : "info"
+        );
+      } else if (syncWasAcknowledged(result)) {
+        toast("PROFILE SYNCHRONIZED", "success");
+      } else if (result.sync_state === "offline") {
+        toast("PROFILE SAVED — ADECK OFFLINE", "info");
+      } else {
+        toast("PROFILE SAVED — SYNC FAILED", "error");
+      }
+      pollBridgeStatus();
+    });
+    return profileSyncChain;
+  }
+
+  async function pollBridgeStatus() {
+    try {
+      const response = await fetchWithTimeout(
+        localBridge + "/api/status",
+        { cache: "no-store" },
+        2000
+      );
+      if (!response.ok) throw new Error("Bridge unavailable");
+      const status = await response.json();
+      state.device.connected = !!status.connected;
+      state.device.port = status.port || "NOT CONNECTED";
+      state.device.firmware = status.firmware || "—";
+    } catch (_) {
+      state.device.connected = false;
+      state.device.port = "NOT CONNECTED";
+      state.device.firmware = "—";
+    }
+    renderDeviceMeta();
+  }
 
   function updateStatusBar() {
     const p = activeProfile();
@@ -615,6 +790,7 @@
         state.activeSlotIndex = 0;
         renderAll();
         persistProfiles();
+        syncActiveProfile();
       };
       li.addEventListener("click", select);
       li.addEventListener("keydown", (e) => {
@@ -635,20 +811,6 @@
       els.profileList.appendChild(empty);
     }
     updateStatusBar();
-  }
-
-  function applyCmdMarquee() {
-    els.buttonGrid.querySelectorAll(".slot-cmd").forEach((cmd) => {
-      const track = cmd.parentElement;
-      if (!track) return;
-      cmd.classList.remove("is-marquee");
-      cmd.style.removeProperty("--scroll");
-      const overflow = cmd.scrollWidth - track.clientWidth;
-      if (overflow > 2) {
-        cmd.style.setProperty("--scroll", overflow + "px");
-        cmd.classList.add("is-marquee");
-      }
-    });
   }
 
   function renderGrid() {
@@ -686,17 +848,9 @@
       lbl.className = "slot-label";
       lbl.textContent = slot.label || "EMPTY";
 
-      const cmdTrack = document.createElement("div");
-      cmdTrack.className = "slot-cmd-track";
-      const cmd = document.createElement("div");
-      cmd.className = "slot-cmd";
-      cmd.textContent = slot.command || "—";
-      cmdTrack.appendChild(cmd);
-
       btn.appendChild(idx);
       btn.appendChild(activeTag);
       btn.appendChild(lbl);
-      btn.appendChild(cmdTrack);
 
       btn.addEventListener("click", () => {
         state.activeSlotIndex = slot.index;
@@ -705,8 +859,6 @@
       });
       els.buttonGrid.appendChild(btn);
     });
-
-    requestAnimationFrame(applyCmdMarquee);
   }
 
   function renderColorOptions() {
@@ -874,7 +1026,12 @@
       confirmLabel: "CREATE",
     });
     if (name === null) return;
-    const p = makeProfile(name.trim().slice(0, PROFILE_NAME_MAX) || "Untitled");
+    const profileName = name.trim().slice(0, PROFILE_NAME_MAX) || "Untitled";
+    if (profileNameExists(profileName)) {
+      toast("PROFILE NAME ALREADY EXISTS", "error");
+      return;
+    }
+    const p = makeProfile(profileName);
     state.profiles.push(p);
     state.activeProfileId = p.id;
     state.activeSlotIndex = 0;
@@ -897,7 +1054,12 @@
       confirmLabel: "RENAME",
     });
     if (name === null) return;
-    p.name = name.trim().slice(0, PROFILE_NAME_MAX) || p.name;
+    const profileName = name.trim().slice(0, PROFILE_NAME_MAX) || p.name;
+    if (profileNameExists(profileName, p.id)) {
+      toast("PROFILE NAME ALREADY EXISTS", "error");
+      return;
+    }
+    p.name = profileName;
     renderProfiles();
     renderEditor();
     renderDeviceMeta();
@@ -909,7 +1071,7 @@
   function duplicateProfile() {
     const p = activeProfile();
     if (!p) return;
-    const copy = cloneProfile(p);
+    const copy = cloneProfile(p, uniqueProfileName(p.name + " Copy"));
     state.profiles.push(copy);
     state.activeProfileId = copy.id;
     state.activeSlotIndex = 0;
@@ -975,6 +1137,7 @@
 
       const p = normalizeProfile(raw);
       p.id = newProfileId();
+      p.name = uniqueProfileName(p.name);
       state.profiles.push(p);
       state.activeProfileId = p.id;
       state.activeSlotIndex = 0;
@@ -1029,11 +1192,13 @@
     return {
       device: "ADECK",
       hardware: "Arduino UNO R4 WiFi + 2.4 TFT + 6 keys",
-      version: 1,
+      version: 2,
       app_version: APP_VERSION,
       generated_at: new Date().toISOString(),
       active_profile: (activeProfile() || {}).name || null,
       settings: {
+        theme: state.settings.theme,
+        language: state.settings.language,
         deviceName: state.settings.deviceName,
         brightness: state.settings.brightness,
         sleepTimeout: Number(state.settings.sleepTimeout),
@@ -1042,8 +1207,10 @@
           activeProfile() ||
           {}
         ).name || null,
+        wifiMode: state.settings.wifiMode,
       },
       profiles: state.profiles.map((p) => ({
+        id: p.id,
         name: p.name,
         buttons: p.slots.map((s) => ({
           key: s.index + 1,
@@ -1134,6 +1301,17 @@
       const imported = data.profiles.map((p) =>
         normalizeProfile({ name: p.name, slots: p.slots || p.buttons })
       );
+      const names = new Set();
+      if (
+        imported.some((profile) => {
+          const name = profile.name.trim().toLowerCase();
+          if (names.has(name)) return true;
+          names.add(name);
+          return false;
+        })
+      ) {
+        throw new Error("Profile names must be unique");
+      }
       if (!(await askConfirm({
         kicker: "IMPORT",
         title: "REPLACE PROFILES",
@@ -1154,13 +1332,6 @@
     } catch (_) {
       toast("IMPORT FAILED", "error");
     }
-  }
-
-  function saveAndShowJson() {
-    openJsonModal(buildConfigJson());
-    markDirty(false);
-    persistProfiles();
-    toast("SAVE COMPLETE", "success");
   }
 
   function collectSettingsFromForm() {
@@ -1352,9 +1523,16 @@
     els.clock.textContent = formatTime(new Date());
   }
 
-  function boot() {
+  async function boot() {
     loadSettings();
-    if (!loadProfiles()) seed();
+    const hadLocalConfig = loadProfiles();
+    if (!hadLocalConfig) seed();
+    const backend = await fetchConfigFromBridge();
+    if (backend.ok && backend.has_config) {
+      hydrateConfig(backend.config);
+    } else if (backend.ok && !backend.has_config && hadLocalConfig) {
+      await postConfigToBridge(buildConfigObject());
+    }
     if (state.settings.deviceName) state.device.name = state.settings.deviceName;
     if (!state.settings.defaultProfileId) state.settings.defaultProfileId = state.activeProfileId;
     state.device.connected = false;
@@ -1368,7 +1546,9 @@
     wireEvents();
     showPage("dashboard");
     setInterval(tickClock, 1000);
+    setInterval(pollBridgeStatus, 2000);
     tickClock();
+    pollBridgeStatus();
   }
 
   boot();
