@@ -234,6 +234,7 @@ select:focus:not(:focus-visible) { outline: none; }
 .device-state { display: inline-flex; align-items: center; gap: 8px; color: var(--ink); font-weight: 800; }
 .state-dot { width: 7px; height: 7px; background: var(--sage); display: inline-block; }
 .state-dot.warn { background: var(--accent); }
+.state-dot.bad { background: var(--danger); }
 .sep { width: 1px; height: 14px; background: var(--line); display: inline-block; }
 .top-clock { color: var(--ink); font-weight: 800; }
 
@@ -478,8 +479,15 @@ select:focus:not(:focus-visible) { outline: none; }
 }
 .field input::placeholder, .field textarea::placeholder { color: #333; font-weight: 700; opacity: 1; }
 
+.command-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px;
+  align-items: stretch;
+}
 .command-wrap {
   display: grid; grid-template-columns: 64px 1fr; border: 1px solid var(--line); background: var(--bg);
+  min-width: 0;
 }
 .command-wrap .command-input { border: none; }
 .command-kind {
@@ -487,6 +495,124 @@ select:focus:not(:focus-visible) { outline: none; }
   font-size: 12px; font-weight: 900; letter-spacing: 0.1em;
   border-right: 1px solid var(--line); background: var(--bg-2); color: var(--ink);
   padding: 0 4px; text-transform: uppercase;
+}
+.command-app-btn {
+  padding: 0 12px;
+  letter-spacing: 0.12em;
+  font-weight: 900;
+}
+
+.app-picker-panel { width: min(780px, calc(100vw - 40px)); max-height: 84vh; }
+.dialog-panel.app-picker-panel {
+  width: min(780px, calc(100vw - 40px));
+  max-height: 84vh;
+}
+.app-picker-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px 18px 18px;
+  min-height: 0;
+  overflow: hidden;
+}
+.app-picker-section { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+.app-picker-heading {
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  font-weight: 900;
+  color: var(--ink);
+}
+.app-picker-list {
+  border: 1px solid var(--line);
+  background: var(--bg);
+  max-height: 220px;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.app-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--ink);
+  padding: 12px 14px;
+  cursor: pointer;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+.app-picker-item:last-child { border-bottom: none; }
+.app-picker-item:hover,
+.app-picker-item:focus {
+  background: var(--ink);
+  color: var(--bg);
+  outline: none;
+}
+.app-picker-icon {
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  background: #ecebe6;
+  overflow: hidden;
+}
+.app-picker-icon img {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  display: block;
+  pointer-events: none;
+}
+.app-picker-icon.is-command {
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0;
+  color: #111111;
+}
+.app-picker-icon.is-command::before { content: ">_"; }
+.app-picker-icon.is-fallback::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  background: #111111;
+  opacity: 0.4;
+}
+.app-picker-item:hover .app-picker-icon,
+.app-picker-item:focus .app-picker-icon {
+  border-color: currentColor;
+}
+.app-picker-item:hover .app-picker-icon.is-command,
+.app-picker-item:focus .app-picker-icon.is-command {
+  color: #111111;
+  background: #ecebe6;
+}
+.app-picker-item-text {
+  min-width: 0;
+  flex: 1;
+}
+.app-picker-item-name { display: block; }
+.app-picker-item-cmd {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  opacity: 0.72;
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.app-picker-empty {
+  padding: 14px 16px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: var(--ink);
+  opacity: 0.7;
 }
 
 .color-field-head {
@@ -752,9 +878,64 @@ select:focus:not(:focus-visible) { outline: none; }
   color: var(--muted);
 }
 
+[data-theme="dark"] .app-picker-item:hover,
+[data-theme="dark"] .app-picker-item:focus {
+  background: var(--hover-bg);
+  color: var(--ink);
+}
+[data-theme="dark"] .app-picker-icon {
+  background: #ecebe6;
+  border-color: var(--line);
+}
+
 [data-theme="dark"] .modal { background: rgba(0, 0, 0, 0.72); }
 
 [data-theme="dark"] .device-screen { border-color: #222220; }
+
+/* system page */
+.panel-system { max-width: 780px; }
+.nav-btn { position: relative; }
+.nav-dot {
+  position: absolute; top: 12px; right: 8px; width: 6px; height: 6px;
+  background: var(--danger); display: block;
+}
+.nav-dot[hidden] { display: none; }
+
+.sys-list { margin: 0; }
+.sys-value { text-transform: none; }
+.sys-value.is-ok { color: var(--ok); }
+.sys-value.is-warn { color: var(--accent); }
+.sys-value.is-bad { color: var(--danger); }
+
+.sys-banner {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  border: 1px solid var(--line); border-left: 3px solid var(--accent);
+  background: var(--bg-2); padding: 12px 14px; flex-wrap: wrap;
+}
+.sys-banner[hidden] { display: none; }
+.sys-banner.is-bad { border-left-color: var(--danger); }
+.sys-banner.is-ok { border-left-color: var(--ok); }
+.sys-banner-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
+.sys-banner-title { font-size: 15px; font-weight: 900; letter-spacing: 0.12em; color: var(--ink); }
+.sys-banner-text { font-size: 14px; font-weight: 800; letter-spacing: 0.04em; color: var(--ink); }
+.sys-banner .save-btn[hidden] { display: none; }
+
+.sys-console-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  flex-wrap: wrap; font-size: 13px; letter-spacing: 0.06em;
+}
+.sys-console {
+  margin: 0; min-height: 160px; max-height: 340px; overflow: auto;
+  white-space: pre-wrap; word-break: break-word; resize: none;
+}
+.sys-console:empty::before {
+  content: "Output from Check System, Repair, Restart and firmware tasks appears here.";
+  opacity: 0.6;
+}
+.sys-advanced { border-color: var(--danger); }
+.sys-busy { opacity: 0.6; pointer-events: none; }
+
+#offlineOverlay { z-index: 65; }
 
 @media (max-width: 1100px) {
   .brand-sub { display: none; }

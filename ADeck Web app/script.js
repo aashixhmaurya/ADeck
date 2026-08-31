@@ -22,6 +22,28 @@
   ];
   const DEFAULT_COLOR = COLORS[0].hex;
 
+  const COMMON_COMMANDS = [
+    { name: "git status", command: "git status", label: "GIT", kind: "command" },
+    { name: "git add .", command: "git add .", label: "ADD", kind: "command" },
+    { name: "git commit", command: "git commit", label: "COMMIT", kind: "command" },
+    { name: "git push", command: "git push", label: "PUSH", kind: "command" },
+    { name: "git pull", command: "git pull", label: "PULL", kind: "command" },
+    { name: "npm test", command: "npm test", label: "TEST", kind: "command" },
+    { name: "npm run dev", command: "npm run dev", label: "DEV", kind: "command" },
+  ];
+
+  const PICKER_LABELS = {
+    "visual studio code": "VS CODE",
+    "google chrome": "CHROME",
+    "file explorer": "EXPLORER",
+    "windows explorer": "EXPLORER",
+    calculator: "CALC",
+    paint: "PAINT",
+    notepad: "NOTEPAD",
+    "youtube music": "YT MUSIC",
+    settings: "SETTINGS",
+  };
+
   function normalizeHex(hex) {
     const raw = String(hex || "").trim().toLowerCase();
     if (/^#[0-9a-f]{6}$/.test(raw)) return raw;
@@ -49,6 +71,7 @@
     sleepTimeout: "60",
     defaultProfileId: null,
     wifiMode: "off",
+    appRelaunchMode: "new",
   };
 
   const DEVICE_PLACEHOLDER = {
@@ -68,14 +91,28 @@
     settings: { ...DEFAULT_SETTINGS },
     storageOk: true,
     device: { ...DEVICE_PLACEHOLDER },
+    backend: {
+      reachable: true,
+      failures: 0,
+      status: null,
+      system: null,
+      busy: false,
+    },
   };
+
+  // Tasks that take the local service down for a moment.
+  const SERVICE_TASKS = new Set(["restart", "repair", "reinstall-firmware", "stop"]);
+  const TASK_WATCH_KEY = "adeck.task.v1";
+  const SERVICE_HINT_KEY = "adeck.servicehint.v1";
+  let taskWatch = null;
+  let installPrompt = null;
 
   function newProfileId() {
     return "p_" + Math.random().toString(36).slice(2, 9);
   }
 
   function makeSlot(i) {
-    return { index: i, label: "", command: "", color: DEFAULT_COLOR };
+    return { index: i, label: "", command: "", kind: "", color: DEFAULT_COLOR };
   }
 
   function makeProfile(name) {
@@ -92,6 +129,7 @@
       index: i,
       label: String(s.label || "").slice(0, LABEL_MAX),
       command: String(s.command || "").slice(0, COMMAND_MAX),
+      kind: s.kind === "app" || s.kind === "command" ? s.kind : "",
       color: normalizeHex(s.color),
     }));
     return p;
@@ -143,6 +181,7 @@
           index: i,
           label: String(s.label || "").slice(0, LABEL_MAX),
           command: String(s.command || "").slice(0, COMMAND_MAX),
+          kind: s.kind === "app" || s.kind === "command" ? s.kind : "",
           color: normalizeHex(s.color),
         };
       }),
@@ -183,6 +222,13 @@
     commandCount: $("commandCount"),
     commandError: $("commandError"),
     commandKindBadge: $("commandKindBadge"),
+    appPickerBtn: $("appPickerBtn"),
+    appPickerModal: $("appPickerModal"),
+    appPickerCloseBtn: $("appPickerCloseBtn"),
+    appPickerSearch: $("appPickerSearch"),
+    appPickerStatus: $("appPickerStatus"),
+    appPickerCommands: $("appPickerCommands"),
+    appPickerApps: $("appPickerApps"),
     swatchRow: $("swatchRow"),
     customColorBtn: $("customColorBtn"),
     customColorInput: $("customColorInput"),
@@ -213,11 +259,53 @@
     settingSleep: $("settingSleep"),
     settingDefaultProfile: $("settingDefaultProfile"),
     settingWifi: $("settingWifi"),
+    settingAppRelaunch: $("settingAppRelaunch"),
     settingsSaveBtn: $("settingsSaveBtn"),
     settingsResetBtn: $("settingsResetBtn"),
     aboutVersion: $("aboutVersion"),
     aboutBuild: $("aboutBuild"),
     toastHost: $("toastHost"),
+    navSystemDot: $("navSystemDot"),
+    systemBanner: $("systemBanner"),
+    systemBannerTitle: $("systemBannerTitle"),
+    systemBannerText: $("systemBannerText"),
+    systemBannerAction: $("systemBannerAction"),
+    sysBackend: $("sysBackend"),
+    sysHardware: $("sysHardware"),
+    sysPort: $("sysPort"),
+    sysFirmware: $("sysFirmware"),
+    sysSync: $("sysSync"),
+    sysConfig: $("sysConfig"),
+    sysSetup: $("sysSetup"),
+    sysRefreshBtn: $("sysRefreshBtn"),
+    sysPortSelect: $("sysPortSelect"),
+    sysReconnectBtn: $("sysReconnectBtn"),
+    sysResyncBtn: $("sysResyncBtn"),
+    sysRestartBtn: $("sysRestartBtn"),
+    sysStopBtn: $("sysStopBtn"),
+    sysViewLogBtn: $("sysViewLogBtn"),
+    sysLogsBtn: $("sysLogsBtn"),
+    sysInstalled: $("sysInstalled"),
+    sysDesktop: $("sysDesktop"),
+    sysAutostart: $("sysAutostart"),
+    sysInstallBtn: $("sysInstallBtn"),
+    sysShortcutBtn: $("sysShortcutBtn"),
+    sysAutostartBtn: $("sysAutostartBtn"),
+    sysInstallHint: $("sysInstallHint"),
+    sysCheckBtn: $("sysCheckBtn"),
+    sysErrorsBtn: $("sysErrorsBtn"),
+    sysRepairBtn: $("sysRepairBtn"),
+    sysFirmwareBtn: $("sysFirmwareBtn"),
+    sysTaskLabel: $("sysTaskLabel"),
+    sysOutput: $("sysOutput"),
+    sysClearOutputBtn: $("sysClearOutputBtn"),
+    offlineOverlay: $("offlineOverlay"),
+    offlineKicker: $("offlineKicker"),
+    offlineTitle: $("offlineTitle"),
+    offlineMessage: $("offlineMessage"),
+    offlineHint: $("offlineHint"),
+    offlineStartBtn: $("offlineStartBtn"),
+    offlineRetryBtn: $("offlineRetryBtn"),
     appDialog: $("appDialog"),
     dialogKicker: $("dialogKicker"),
     dialogTitle: $("dialogTitle"),
@@ -416,12 +504,31 @@
     return found ? found.name.toUpperCase() : "CUSTOM";
   }
 
-  function updateCommandKindUI(cmd) {
+  function pickerLabel(name, fallback) {
+    const raw = String(name || "").trim();
+    const mapped = PICKER_LABELS[raw.toLowerCase()];
+    if (mapped) return mapped.slice(0, LABEL_MAX);
+    const ascii = raw.replace(/[^\x20-\x7E]/g, "").trim();
+    if (ascii) return ascii.slice(0, LABEL_MAX).toUpperCase();
+    return String(fallback || "").slice(0, LABEL_MAX);
+  }
+
+  function updateCommandKindUI(cmd, kind) {
     if (!els.commandKindBadge) return;
-    const kind = detectCommandKind(cmd);
-    els.commandKindBadge.dataset.kind = kind;
+    if (kind === "app") {
+      els.commandKindBadge.dataset.kind = "path";
+      els.commandKindBadge.textContent = "APP";
+      return;
+    }
+    if (kind === "command") {
+      els.commandKindBadge.dataset.kind = "command";
+      els.commandKindBadge.textContent = "CMD";
+      return;
+    }
+    const detected = detectCommandKind(cmd);
+    els.commandKindBadge.dataset.kind = detected;
     els.commandKindBadge.textContent =
-      kind === "url" ? "URL" : kind === "path" ? "PATH" : kind === "command" ? "CMD" : "—";
+      detected === "url" ? "URL" : detected === "path" ? "PATH" : detected === "command" ? "CMD" : "—";
   }
 
   function markDirty(flag) {
@@ -715,6 +822,7 @@
   }
 
   async function pollBridgeStatus() {
+    let status = null;
     try {
       const response = await fetchWithTimeout(
         localBridge + "/api/status",
@@ -722,25 +830,36 @@
         2000
       );
       if (!response.ok) throw new Error("Bridge unavailable");
-      const status = await response.json();
+      status = await response.json();
       state.device.connected = !!status.connected;
       state.device.port = status.port || "NOT CONNECTED";
       state.device.firmware = status.firmware || "—";
+      state.backend.status = status;
+      setBackendReachable(true);
     } catch (_) {
       state.device.connected = false;
       state.device.port = "NOT CONNECTED";
       state.device.firmware = "—";
+      setBackendReachable(false);
     }
     renderDeviceMeta();
+    if (state.currentPage === "system") renderSystem();
+    return status;
   }
 
   function updateStatusBar() {
     const p = activeProfile();
+    const offline = state.backend && !state.backend.reachable;
     els.footerDirty.textContent = state.dirty ? "UNSAVED" : "SAVED";
     els.footerDirty.classList.toggle("dirty", state.dirty);
     els.footerProfile.textContent = p ? p.name : "—";
-    if (els.statusLine) els.statusLine.textContent = state.dirty ? "EDITING" : "READY";
-    if (els.topStateDot) els.topStateDot.classList.toggle("warn", state.dirty);
+    if (els.statusLine) {
+      els.statusLine.textContent = offline ? "SERVICE OFF" : state.dirty ? "EDITING" : "READY";
+    }
+    if (els.topStateDot) {
+      els.topStateDot.classList.toggle("warn", state.dirty && !offline);
+      els.topStateDot.classList.toggle("bad", !!offline);
+    }
     if (els.profileCount) els.profileCount.textContent = String(state.profiles.length);
   }
 
@@ -750,7 +869,7 @@
     const s = activeSlot();
     const online = !!d.connected;
     if (els.deviceConnBadge) {
-      els.deviceConnBadge.textContent = online ? "ONLINE" : "LOCAL";
+      els.deviceConnBadge.textContent = online ? "ONLINE" : "OFFLINE";
       els.deviceConnBadge.classList.toggle("offline", !online);
     }
     if (els.screenActiveKey) {
@@ -914,6 +1033,7 @@
 
     els.labelInput.disabled = disabled;
     els.commandInput.disabled = disabled;
+    if (els.appPickerBtn) els.appPickerBtn.disabled = disabled;
     els.clearSlotBtn.disabled = disabled;
     els.customColorBtn.disabled = disabled;
     els.swatchRow.querySelectorAll(".swatch").forEach((sw) => {
@@ -933,7 +1053,7 @@
       els.labelCount.textContent = "0";
       els.commandCount.textContent = "0";
       els.commandError.hidden = true;
-      updateCommandKindUI("");
+      updateCommandKindUI("", "");
       highlightSwatch(null);
       return;
     }
@@ -956,7 +1076,7 @@
     els.commandInput.value = command;
     els.labelCount.textContent = String(label.length);
     els.commandCount.textContent = String(command.length);
-    updateCommandKindUI(command);
+    updateCommandKindUI(command, s.kind);
 
     const v = validateCommand(command);
     els.commandError.hidden = v.ok;
@@ -975,6 +1095,12 @@
     els.brightnessVal.textContent = (s.brightness ?? 80) + "%";
     els.settingSleep.value = String(s.sleepTimeout ?? "60");
     els.settingWifi.value = s.wifiMode || "off";
+    if (els.settingAppRelaunch) {
+      els.settingAppRelaunch.value =
+        s.appRelaunchMode === "minimize" || s.appRelaunchMode === "close"
+          ? s.appRelaunchMode
+          : "new";
+    }
     els.settingDefaultProfile.innerHTML = "";
     state.profiles.forEach((p) => {
       const opt = document.createElement("option");
@@ -1013,6 +1139,10 @@
     });
     if (id === "settings") renderSettingsForm();
     if (id === "about") renderAbout();
+    if (id === "system") {
+      renderSystem();
+      refreshSystem();
+    }
   }
 
   async function addProfile() {
@@ -1118,6 +1248,7 @@
           index: s.index,
           label: s.label,
           command: s.command,
+          kind: s.kind === "app" || s.kind === "command" ? s.kind : "",
           color: s.color,
         })),
       },
@@ -1165,6 +1296,7 @@
     }
     s.label = "";
     s.command = "";
+    s.kind = "";
     s.color = DEFAULT_COLOR;
     renderEditor();
     renderGrid();
@@ -1208,16 +1340,25 @@
           {}
         ).name || null,
         wifiMode: state.settings.wifiMode,
+        appRelaunchMode:
+          state.settings.appRelaunchMode === "minimize" ||
+          state.settings.appRelaunchMode === "close"
+            ? state.settings.appRelaunchMode
+            : "new",
       },
       profiles: state.profiles.map((p) => ({
         id: p.id,
         name: p.name,
-        buttons: p.slots.map((s) => ({
-          key: s.index + 1,
-          label: s.label,
-          command: s.command,
-          color: s.color,
-        })),
+        buttons: p.slots.map((s) => {
+          const button = {
+            key: s.index + 1,
+            label: s.label,
+            command: s.command,
+            color: s.color,
+          };
+          if (s.kind === "app" || s.kind === "command") button.kind = s.kind;
+          return button;
+        }),
       })),
     };
   }
@@ -1343,14 +1484,27 @@
       sleepTimeout: els.settingSleep.value || "60",
       defaultProfileId: els.settingDefaultProfile.value || null,
       wifiMode: els.settingWifi.value || "off",
+      appRelaunchMode: ["minimize", "close"].includes(
+        els.settingAppRelaunch && els.settingAppRelaunch.value
+      )
+        ? els.settingAppRelaunch.value
+        : "new",
     };
   }
 
-  function saveSettings() {
+  async function saveSettings() {
     state.settings = collectSettingsFromForm();
     applyTheme(state.settings.theme);
     persistSettings();
     renderDeviceMeta();
+    const result = await postConfigToBridge(buildConfigObject());
+    if (!result.ok) {
+      toast(
+        result.reachable ? "SETTINGS SAVED LOCALLY" : "SETTINGS SAVED LOCALLY — SERVICE OFFLINE",
+        result.reachable ? "error" : "info"
+      );
+      return;
+    }
     toast("SETTINGS SAVED", "success");
   }
 
@@ -1369,6 +1523,905 @@
     renderSettingsForm();
     renderDeviceMeta();
     toast("SETTINGS RESET", "info");
+  }
+
+  /* ---------------------------------------------------------------
+     Installed-app plumbing and local service control (System page)
+     --------------------------------------------------------------- */
+
+  function registerServiceWorker() {
+    if (!("serviceWorker" in navigator)) return;
+    if (!/^https?:$/.test(window.location.protocol)) return;
+    navigator.serviceWorker.register("./sw.js").catch(() => {});
+  }
+
+  function isStandalone() {
+    return (
+      window.matchMedia("(display-mode: standalone)").matches ||
+      window.matchMedia("(display-mode: minimal-ui)").matches ||
+      window.matchMedia("(display-mode: window-controls-overlay)").matches ||
+      window.navigator.standalone === true
+    );
+  }
+
+  function setupInstallPrompt() {
+    window.addEventListener("beforeinstallprompt", (event) => {
+      event.preventDefault();
+      installPrompt = event;
+      renderSystem();
+    });
+    window.addEventListener("appinstalled", () => {
+      installPrompt = null;
+      toast("ADECK INSTALLED", "success");
+      renderSystem();
+    });
+  }
+
+  async function promptInstall() {
+    if (!installPrompt) {
+      toast("USE BROWSER MENU → INSTALL ADECK", "info");
+      return;
+    }
+    const prompt = installPrompt;
+    installPrompt = null;
+    try {
+      prompt.prompt();
+      const choice = await prompt.userChoice;
+      if (choice && choice.outcome === "accepted") toast("ADDING ADECK TO WINDOWS", "success");
+    } catch (_) {
+      toast("INSTALL PROMPT UNAVAILABLE", "error");
+    }
+    renderSystem();
+  }
+
+  function readServiceHint() {
+    try {
+      return JSON.parse(localStorage.getItem(SERVICE_HINT_KEY) || "{}") || {};
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function writeServiceHint(hint) {
+    try {
+      localStorage.setItem(SERVICE_HINT_KEY, JSON.stringify(hint));
+    } catch (_) {}
+  }
+
+  function formatUptime(seconds) {
+    const total = Math.max(0, Number(seconds) || 0);
+    if (total < 60) return total + "S";
+    if (total < 3600) return Math.floor(total / 60) + "M";
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
+    return hours + "H " + minutes + "M";
+  }
+
+  function setSysValue(el, text, tone) {
+    if (!el) return;
+    el.textContent = text;
+    el.classList.remove("is-ok", "is-warn", "is-bad");
+    if (tone) el.classList.add(tone);
+  }
+
+  function activeServiceTask() {
+    if (!taskWatch || taskWatch.finished) return null;
+    return SERVICE_TASKS.has(taskWatch.action) ? taskWatch.action : null;
+  }
+
+  function renderOfflineOverlay() {
+    if (!els.offlineOverlay) return;
+    const hint = readServiceHint();
+    const running = activeServiceTask();
+    if (running) {
+      els.offlineKicker.textContent = running.toUpperCase().replace(/-/g, " ");
+      els.offlineTitle.textContent = "SERVICE IS RESTARTING";
+      els.offlineMessage.textContent =
+        "The maintenance task is still running and the local service is down for a moment. This window reconnects on its own.";
+      els.offlineHint.textContent = "Nothing to do — hold on.";
+      els.offlineStartBtn.hidden = true;
+    } else {
+      els.offlineKicker.textContent = "SERVICE";
+      els.offlineTitle.textContent = "ADECK SERVICE IS NOT RUNNING";
+      els.offlineMessage.textContent =
+        "This window is open, but the local ADeck service is not answering on 127.0.0.1:8765. Saved profiles and device settings are untouched.";
+      els.offlineHint.textContent = hint.protocol
+        ? "Use START SERVICE, or open ADeck from its desktop icon."
+        : "Open ADeck from its desktop icon, or run Start ADeck.bat in the project folder.";
+      els.offlineStartBtn.hidden = !hint.protocol;
+    }
+  }
+
+  function showOfflineOverlay() {
+    if (!els.offlineOverlay) return;
+    renderOfflineOverlay();
+    els.offlineOverlay.hidden = false;
+  }
+
+  function hideOfflineOverlay() {
+    if (els.offlineOverlay) els.offlineOverlay.hidden = true;
+  }
+
+  function setBackendReachable(ok) {
+    const backend = state.backend;
+    if (ok) {
+      const recovered = !backend.reachable;
+      backend.reachable = true;
+      backend.failures = 0;
+      hideOfflineOverlay();
+      if (recovered) {
+        toast("SERVICE RECONNECTED", "success");
+        refreshSystem();
+      }
+    } else {
+      backend.failures += 1;
+      backend.status = null;
+      if (backend.failures >= 2) {
+        backend.reachable = false;
+        showOfflineOverlay();
+      }
+    }
+    updateNavDot();
+    updateStatusBar();
+  }
+
+  function startService() {
+    const hint = readServiceHint();
+    if (!hint.protocol) {
+      toast("OPEN ADECK FROM ITS DESKTOP ICON", "info");
+      return;
+    }
+    toast("STARTING ADECK SERVICE", "info");
+    window.location.href = "adeck://start";
+  }
+
+  async function apiPost(path, body, timeoutMs) {
+    const response = await fetchWithTimeout(
+      localBridge + path,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body || {}),
+      },
+      timeoutMs || 15000
+    );
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.ok) {
+      throw new Error(data.error || "Request failed (HTTP " + response.status + ")");
+    }
+    return data;
+  }
+
+  async function apiGet(path, timeoutMs) {
+    const response = await fetchWithTimeout(
+      localBridge + path,
+      { cache: "no-store" },
+      timeoutMs || 6000
+    );
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.ok) {
+      throw new Error(data.error || "Request failed (HTTP " + response.status + ")");
+    }
+    return data;
+  }
+
+  async function refreshSystem() {
+    try {
+      const data = await apiGet("/api/system", 8000);
+      state.backend.system = data;
+      const integration = data.integration || {};
+      writeServiceHint({
+        protocol: !!integration.protocol_handler,
+        desktop: !!integration.desktop_shortcut,
+      });
+    } catch (_) {
+      state.backend.system = null;
+    }
+    renderSystem();
+    updateNavDot();
+    return state.backend.system;
+  }
+
+  function systemAttention() {
+    const system = state.backend.system;
+    if (!state.backend.reachable) {
+      return {
+        tone: "is-bad",
+        title: "SERVICE OFFLINE",
+        text: "The local ADeck service is not answering. Profiles stay saved on this PC.",
+        action: null,
+      };
+    }
+    if (system && system.environment && system.environment.setup_complete === false) {
+      const missing = [];
+      if (!system.environment.venv) missing.push("Python environment");
+      if (!system.environment.pyserial) missing.push("PySerial");
+      if (!system.environment.arduino_cli) missing.push("Arduino CLI");
+      return {
+        tone: "is-bad",
+        title: "SETUP INCOMPLETE",
+        text: "Missing: " + (missing.join(", ") || "setup components") + ".",
+        action: { label: "INSTALL / REPAIR", handler: () => runTask("repair") },
+      };
+    }
+    const device = (system && system.device) || state.backend.status;
+    if (device && !device.connected) {
+      return {
+        tone: "is-warn",
+        title: "HARDWARE OFFLINE",
+        text:
+          (device.error ? device.error + ". " : "") +
+          "Connect the UNO R4 WiFi with a data USB cable. Editing still works and syncs when it returns.",
+        action: { label: "RECONNECT BOARD", handler: () => reconnectDevice() },
+      };
+    }
+    if (device && device.connected && device.last_sync === false) {
+      return {
+        tone: "is-warn",
+        title: "LAST SYNC FAILED",
+        text: device.error || "The board did not acknowledge the last configuration.",
+        action: { label: "RESYNC TO DEVICE", handler: () => resyncDevice() },
+      };
+    }
+    if (system && system.config && system.config.saved === false) {
+      return {
+        tone: "is-warn",
+        title: "NOTHING SAVED YET",
+        text: "Use SAVE & JSON on the dashboard to store profiles and push them to the board.",
+        action: null,
+      };
+    }
+    return null;
+  }
+
+  function updateNavDot() {
+    if (!els.navSystemDot) return;
+    els.navSystemDot.hidden = !systemAttention();
+  }
+
+  function renderSystemBanner() {
+    if (!els.systemBanner) return;
+    const attention = systemAttention();
+    els.systemBanner.classList.remove("is-bad", "is-ok");
+    if (!attention) {
+      els.systemBanner.hidden = true;
+      return;
+    }
+    els.systemBanner.hidden = false;
+    if (attention.tone === "is-bad") els.systemBanner.classList.add("is-bad");
+    els.systemBannerTitle.textContent = attention.title;
+    els.systemBannerText.textContent = attention.text;
+    if (attention.action) {
+      els.systemBannerAction.hidden = false;
+      els.systemBannerAction.textContent = attention.action.label;
+      els.systemBannerAction.onclick = attention.action.handler;
+    } else {
+      els.systemBannerAction.hidden = true;
+      els.systemBannerAction.onclick = null;
+    }
+  }
+
+  function renderPortOptions(system) {
+    const select = els.sysPortSelect;
+    if (!select) return;
+    const ports = (system && system.serial_ports) || [];
+    const wanted = select.dataset.pending || (system && system.requested_port) || "";
+    select.innerHTML = "";
+    const auto = document.createElement("option");
+    auto.value = "";
+    auto.textContent = ports.length
+      ? "AUTO-DETECT (" + ports.length + " PORT" + (ports.length === 1 ? "" : "S") + ")"
+      : "AUTO-DETECT";
+    select.appendChild(auto);
+    ports.forEach((port) => {
+      const option = document.createElement("option");
+      option.value = port.device;
+      const tag = port.arduino ? " — ARDUINO" : port.description ? " — " + port.description : "";
+      option.textContent = (port.device + tag).slice(0, 48);
+      select.appendChild(option);
+    });
+    if (wanted && !ports.some((port) => port.device === wanted)) {
+      const option = document.createElement("option");
+      option.value = wanted;
+      option.textContent = wanted + " — NOT PRESENT";
+      select.appendChild(option);
+    }
+    select.value = wanted || "";
+  }
+
+  function renderSystem() {
+    if (!els.sysBackend) return;
+    const system = state.backend.system;
+    const status = state.backend.status;
+    // /api/status is polled every 2s, so it wins over the slower system snapshot.
+    const device = !state.backend.reachable
+      ? null
+      : status || (system && system.device) || null;
+
+    if (!state.backend.reachable) {
+      setSysValue(els.sysBackend, "NOT RUNNING", "is-bad");
+    } else if (system && system.backend) {
+      setSysValue(
+        els.sysBackend,
+        "RUNNING — v" +
+          system.bridge_version +
+          " · PID " +
+          system.backend.pid +
+          " · UP " +
+          formatUptime(system.backend.uptime_seconds),
+        "is-ok"
+      );
+    } else if (status) {
+      setSysValue(els.sysBackend, "RUNNING — v" + (status.bridge_version || "?"), "is-ok");
+    } else {
+      setSysValue(els.sysBackend, "CHECKING…", null);
+    }
+
+    if (!device) {
+      setSysValue(els.sysHardware, "UNKNOWN", null);
+      setSysValue(els.sysPort, "—", null);
+      setSysValue(els.sysFirmware, "—", null);
+      setSysValue(els.sysSync, "—", null);
+    } else if (device.connected) {
+      setSysValue(els.sysHardware, "CONNECTED", "is-ok");
+      setSysValue(els.sysPort, String(device.port || "—"), "is-ok");
+      setSysValue(els.sysFirmware, "PROTOCOL " + (device.firmware || "?"), "is-ok");
+      if (device.last_sync === true) {
+        setSysValue(
+          els.sysSync,
+          "IN SYNC" + (device.last_transaction_id ? " · " + device.last_transaction_id : ""),
+          "is-ok"
+        );
+      } else if (device.last_sync === false) {
+        setSysValue(els.sysSync, "NOT SYNCED — " + (device.error || "no acknowledgement"), "is-warn");
+      } else {
+        setSysValue(els.sysSync, "WAITING FOR FIRST SAVE", null);
+      }
+    } else {
+      setSysValue(els.sysHardware, "OFFLINE — " + (device.error || "not connected"), "is-warn");
+      const ports = (system && system.serial_ports) || [];
+      const arduino = ports.filter((port) => port.arduino).length;
+      setSysValue(
+        els.sysPort,
+        ports.length
+          ? "NOT CONNECTED · " + ports.length + " PORT(S) SEEN" + (arduino ? ", " + arduino + " ARDUINO" : "")
+          : "NO SERIAL PORTS FOUND",
+        "is-warn"
+      );
+      setSysValue(els.sysFirmware, "UNKNOWN — BOARD OFFLINE", "is-warn");
+      setSysValue(els.sysSync, "PENDING — SYNCS WHEN CONNECTED", "is-warn");
+    }
+
+    if (system && system.config) {
+      if (system.config.saved) {
+        setSysValue(
+          els.sysConfig,
+          "SAVED — " +
+            system.config.profile_count +
+            " PROFILE(S) · ACTIVE " +
+            (system.config.active_profile || "—"),
+          "is-ok"
+        );
+      } else {
+        setSysValue(els.sysConfig, "NOT SAVED YET", "is-warn");
+      }
+    } else {
+      setSysValue(els.sysConfig, "—", null);
+    }
+
+    if (system && system.environment) {
+      const env = system.environment;
+      if (env.setup_complete) {
+        setSysValue(
+          els.sysSetup,
+          "COMPLETE — PYSERIAL " + (env.pyserial || "?") + " · ARDUINO CLI READY",
+          "is-ok"
+        );
+      } else {
+        const missing = [];
+        if (!env.venv) missing.push("PYTHON ENV");
+        if (!env.pyserial) missing.push("PYSERIAL");
+        if (!env.arduino_cli) missing.push("ARDUINO CLI");
+        setSysValue(els.sysSetup, "INCOMPLETE — MISSING " + missing.join(", "), "is-bad");
+      }
+    } else {
+      setSysValue(els.sysSetup, "—", null);
+    }
+
+    const integration = (system && system.integration) || {};
+    const standalone = isStandalone();
+    setSysValue(
+      els.sysInstalled,
+      standalone ? "INSTALLED APP WINDOW" : "BROWSER TAB",
+      standalone ? "is-ok" : null
+    );
+    setSysValue(
+      els.sysDesktop,
+      integration.desktop_shortcut ? "CREATED" : "NOT CREATED",
+      integration.desktop_shortcut ? "is-ok" : null
+    );
+    setSysValue(
+      els.sysAutostart,
+      integration.autostart ? "ON" : "OFF",
+      integration.autostart ? "is-ok" : null
+    );
+    if (els.sysAutostartBtn) {
+      els.sysAutostartBtn.textContent = integration.autostart
+        ? "TURN OFF START WITH WINDOWS"
+        : "START WITH WINDOWS";
+    }
+    if (els.sysShortcutBtn) {
+      els.sysShortcutBtn.textContent = integration.desktop_shortcut
+        ? "RECREATE DESKTOP ICON"
+        : "CREATE DESKTOP ICON";
+    }
+    if (els.sysInstallBtn) els.sysInstallBtn.hidden = standalone || !installPrompt;
+    if (els.sysInstallHint) {
+      els.sysInstallHint.textContent = standalone
+        ? "Running in its own window. The desktop icon starts the service and reopens this window."
+        : installPrompt
+        ? "INSTALL APP adds ADeck to Windows and opens it in its own window."
+        : "No install prompt available yet — use your browser menu (Install ADeck), or the desktop icon created by setup.";
+    }
+
+    renderPortOptions(system);
+    renderSystemBanner();
+  }
+
+  function setSystemBusy(busy) {
+    state.backend.busy = !!busy;
+    const panel = document.querySelector(".panel-system");
+    if (panel) panel.classList.toggle("sys-busy", !!busy);
+  }
+
+  function renderTaskOutput(task) {
+    if (!els.sysOutput) return;
+    const lines = (task && task.output) || [];
+    els.sysOutput.textContent = lines.join("\n");
+    els.sysOutput.scrollTop = els.sysOutput.scrollHeight;
+    if (!els.sysTaskLabel) return;
+    const action = (task && task.action) || (taskWatch && taskWatch.action) || "TASK";
+    if (task && task.state === "done") {
+      els.sysTaskLabel.textContent =
+        action.toUpperCase() + (task.exit_code === 0 ? " — FINISHED OK" : " — FINISHED WITH ERRORS");
+    } else if (task && task.state === "unknown") {
+      els.sysTaskLabel.textContent = action.toUpperCase() + " — NO LONGER REPORTING";
+    } else {
+      els.sysTaskLabel.textContent = action.toUpperCase() + " — RUNNING…";
+    }
+  }
+
+  function persistTaskWatch(value) {
+    try {
+      if (value) localStorage.setItem(TASK_WATCH_KEY, JSON.stringify(value));
+      else localStorage.removeItem(TASK_WATCH_KEY);
+    } catch (_) {}
+  }
+
+  function stopTaskWatch() {
+    if (taskWatch && taskWatch.timer) window.clearTimeout(taskWatch.timer);
+    taskWatch = null;
+  }
+
+  function finishTaskWatch(task) {
+    const action = (taskWatch && taskWatch.action) || (task && task.action) || "task";
+    if (taskWatch) taskWatch.finished = true;
+    stopTaskWatch();
+    persistTaskWatch(null);
+    setSystemBusy(false);
+    renderTaskOutput(task);
+    if (task && task.exit_code === 0) {
+      toast(action.toUpperCase().replace(/-/g, " ") + " FINISHED", "success");
+    } else {
+      toast(action.toUpperCase().replace(/-/g, " ") + " REPORTED PROBLEMS", "error");
+    }
+    pollBridgeStatus();
+    refreshSystem();
+  }
+
+  async function pollTask() {
+    if (!taskWatch) return;
+    let task = null;
+    try {
+      const data = await apiGet("/api/tasks/" + encodeURIComponent(taskWatch.id), 5000);
+      task = data.task;
+    } catch (_) {
+      // The service itself may be restarting as part of this task; keep waiting.
+    }
+    if (!taskWatch) return;
+    if (task) {
+      renderTaskOutput(task);
+      if (task.state === "done" || task.state === "unknown") {
+        finishTaskWatch(task);
+        return;
+      }
+    }
+    taskWatch.timer = window.setTimeout(pollTask, 1200);
+  }
+
+  function watchTask(taskId, action) {
+    stopTaskWatch();
+    taskWatch = { id: taskId, action: action, timer: null, finished: false };
+    persistTaskWatch({ id: taskId, action: action });
+    setSystemBusy(true);
+    if (els.sysTaskLabel) els.sysTaskLabel.textContent = action.toUpperCase() + " — RUNNING…";
+    if (els.sysOutput) els.sysOutput.textContent = "";
+    pollTask();
+  }
+
+  async function resumeTaskWatch() {
+    let saved = null;
+    try {
+      saved = JSON.parse(localStorage.getItem(TASK_WATCH_KEY) || "null");
+    } catch (_) {
+      saved = null;
+    }
+    if (!saved || !saved.id) return;
+    try {
+      const data = await apiGet("/api/tasks/" + encodeURIComponent(saved.id), 5000);
+      if (data.task && data.task.state === "running") {
+        watchTask(saved.id, data.task.action || saved.action || "task");
+        return;
+      }
+      renderTaskOutput(data.task);
+    } catch (_) {
+      /* task history was pruned or the service is down */
+    }
+    persistTaskWatch(null);
+  }
+
+  async function runTask(action, options) {
+    const settings = options || {};
+    if (settings.confirm) {
+      const ok = await askConfirm(settings.confirm);
+      if (!ok) return;
+    }
+    if (state.currentPage !== "system" && settings.reveal !== false) showPage("system");
+    try {
+      const data = await apiPost("/api/control", { action: action });
+      if (data.task && data.task.id) {
+        watchTask(data.task.id, action);
+        toast(action.toUpperCase().replace(/-/g, " ") + " STARTED", "info");
+      } else {
+        toast(action.toUpperCase() + " STARTED", "info");
+      }
+    } catch (error) {
+      toast("COULD NOT START " + action.toUpperCase() + " — " + error.message, "error");
+    }
+  }
+
+  async function stopService() {
+    const ok = await askConfirm({
+      kicker: "SERVICE",
+      title: "STOP ADECK SERVICE",
+      message:
+        "The board stops responding to key presses and this window loses its connection until ADeck is started again.",
+      confirmLabel: "STOP",
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await apiPost("/api/control", { action: "stop" });
+      toast("STOPPING ADECK SERVICE", "info");
+      // The task's own output lives in the service we just stopped, so only
+      // the connection state is tracked from here.
+      state.backend.failures = 2;
+      setBackendReachable(false);
+    } catch (error) {
+      toast("COULD NOT STOP SERVICE — " + error.message, "error");
+    }
+  }
+
+  async function reconnectDevice() {
+    const port = els.sysPortSelect ? els.sysPortSelect.value : "";
+    try {
+      const data = await apiPost("/api/control", { action: "reconnect", port: port }, 8000);
+      toast((data.message || "RECONNECTING").toUpperCase(), "info");
+      window.setTimeout(() => {
+        pollBridgeStatus();
+        refreshSystem();
+      }, 2500);
+    } catch (error) {
+      toast("RECONNECT FAILED — " + error.message, "error");
+    }
+  }
+
+  async function resyncDevice() {
+    try {
+      const data = await apiPost("/api/control", { action: "resync" }, 12000);
+      if (data.sync_state === "synced") toast("DEVICE SYNCHRONIZED", "success");
+      else if (data.sync_state === "offline") toast("ADECK IS OFFLINE", "info");
+      else toast("SYNC FAILED — " + (data.sync_error || "no acknowledgement"), "error");
+      refreshSystem();
+    } catch (error) {
+      toast("RESYNC FAILED — " + error.message, "error");
+    }
+  }
+
+  async function desktopAction(action, successMessage) {
+    try {
+      await apiPost("/api/control", { action: action }, 25000);
+      toast(successMessage, "success");
+      refreshSystem();
+    } catch (error) {
+      toast(action.toUpperCase().replace(/-/g, " ") + " FAILED — " + error.message, "error");
+    }
+  }
+
+  async function toggleAutostart() {
+    const system = state.backend.system;
+    const on = !!(system && system.integration && system.integration.autostart);
+    await desktopAction(
+      on ? "autostart-off" : "autostart-on",
+      on ? "ADECK WILL NOT START WITH WINDOWS" : "ADECK WILL START WITH WINDOWS"
+    );
+  }
+
+  async function viewLog() {
+    try {
+      const data = await apiGet("/api/logs?source=app&lines=200", 8000);
+      if (els.sysOutput) {
+        els.sysOutput.textContent = (data.lines || []).join("\n") || "The log file is empty.";
+        els.sysOutput.scrollTop = els.sysOutput.scrollHeight;
+      }
+      if (els.sysTaskLabel) els.sysTaskLabel.textContent = "APP LOG — " + data.path;
+    } catch (error) {
+      toast("COULD NOT READ LOG — " + error.message, "error");
+    }
+  }
+
+  function wireSystemEvents() {
+    if (els.sysRefreshBtn) {
+      els.sysRefreshBtn.addEventListener("click", () => {
+        pollBridgeStatus();
+        refreshSystem();
+        toast("STATUS REFRESHED", "info");
+      });
+    }
+    if (els.sysReconnectBtn) els.sysReconnectBtn.addEventListener("click", reconnectDevice);
+    if (els.sysResyncBtn) els.sysResyncBtn.addEventListener("click", resyncDevice);
+    if (els.sysPortSelect) {
+      els.sysPortSelect.addEventListener("change", (event) => {
+        els.sysPortSelect.dataset.pending = event.target.value;
+      });
+    }
+    if (els.sysRestartBtn) {
+      els.sysRestartBtn.addEventListener("click", () =>
+        runTask("restart", {
+          confirm: {
+            kicker: "SERVICE",
+            title: "RESTART ADECK SERVICE",
+            message:
+              "The service stops and starts again. This window reconnects automatically after a few seconds.",
+            confirmLabel: "RESTART",
+          },
+        })
+      );
+    }
+    if (els.sysStopBtn) els.sysStopBtn.addEventListener("click", stopService);
+    if (els.sysViewLogBtn) els.sysViewLogBtn.addEventListener("click", viewLog);
+    if (els.sysLogsBtn) {
+      els.sysLogsBtn.addEventListener("click", () =>
+        desktopAction("open-logs", "LOG FOLDER OPENED")
+      );
+    }
+    if (els.sysInstallBtn) els.sysInstallBtn.addEventListener("click", promptInstall);
+    if (els.sysShortcutBtn) {
+      els.sysShortcutBtn.addEventListener("click", () =>
+        desktopAction("create-shortcuts", "DESKTOP AND START MENU ICONS CREATED")
+      );
+    }
+    if (els.sysAutostartBtn) els.sysAutostartBtn.addEventListener("click", toggleAutostart);
+    if (els.sysCheckBtn) els.sysCheckBtn.addEventListener("click", () => runTask("check"));
+    if (els.sysErrorsBtn) els.sysErrorsBtn.addEventListener("click", () => runTask("errors"));
+    if (els.sysRepairBtn) {
+      els.sysRepairBtn.addEventListener("click", () =>
+        runTask("repair", {
+          confirm: {
+            kicker: "MAINTENANCE",
+            title: "INSTALL / REPAIR",
+            message:
+              "Rebuilds the Python environment and Arduino CLI if needed, reflashes firmware only when the board does not answer, then restarts the service. This can take several minutes.",
+            confirmLabel: "RUN REPAIR",
+          },
+        })
+      );
+    }
+    if (els.sysFirmwareBtn) {
+      els.sysFirmwareBtn.addEventListener("click", () =>
+        runTask("reinstall-firmware", {
+          confirm: {
+            kicker: "FIRMWARE",
+            title: "REINSTALL FIRMWARE",
+            message:
+              "Stops the service and reflashes the UNO R4 WiFi. Keep the board plugged in with a data USB cable until it finishes.",
+            confirmLabel: "REFLASH",
+            danger: true,
+          },
+        })
+      );
+    }
+    if (els.sysClearOutputBtn) {
+      els.sysClearOutputBtn.addEventListener("click", () => {
+        if (els.sysOutput) els.sysOutput.textContent = "";
+        if (els.sysTaskLabel) els.sysTaskLabel.textContent = "Nothing has been run yet.";
+      });
+    }
+    if (els.offlineRetryBtn) {
+      els.offlineRetryBtn.addEventListener("click", () => {
+        toast("CHECKING SERVICE", "info");
+        pollBridgeStatus();
+      });
+    }
+    if (els.offlineStartBtn) els.offlineStartBtn.addEventListener("click", startService);
+  }
+
+  let installedAppsCache = null;
+  let installedAppsError = "";
+  let installedAppsPromise = null;
+
+  function isAppPickerOpen() {
+    return !!(els.appPickerModal && !els.appPickerModal.hidden);
+  }
+
+  function closeAppPicker() {
+    if (!els.appPickerModal) return;
+    els.appPickerModal.hidden = true;
+  }
+
+  function matchesPickerQuery(text, query) {
+    if (!query) return true;
+    return String(text || "").toLowerCase().includes(query);
+  }
+
+  function pickerItemIcon(item) {
+    const icon = document.createElement("span");
+    icon.className = "app-picker-icon";
+    icon.setAttribute("aria-hidden", "true");
+    if (item.kind === "app") {
+      const img = document.createElement("img");
+      img.alt = "";
+      img.decoding = "async";
+      img.loading = "lazy";
+      img.src =
+        localBridge + "/api/app-icon?command=" + encodeURIComponent(item.command);
+      img.addEventListener("error", () => {
+        img.remove();
+        icon.classList.add("is-fallback");
+      });
+      icon.appendChild(img);
+    } else {
+      icon.classList.add("is-command");
+    }
+    return icon;
+  }
+
+  function renderPickerList(container, items, emptyText) {
+    if (!container) return;
+    container.innerHTML = "";
+    if (!items.length) {
+      const empty = document.createElement("div");
+      empty.className = "app-picker-empty mono";
+      empty.textContent = emptyText;
+      container.appendChild(empty);
+      return;
+    }
+    items.forEach((item) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "app-picker-item";
+      btn.setAttribute("role", "option");
+      btn.title = item.command;
+      const text = document.createElement("span");
+      text.className = "app-picker-item-text";
+      const name = document.createElement("span");
+      name.className = "app-picker-item-name";
+      name.textContent = item.name;
+      const cmd = document.createElement("span");
+      cmd.className = "app-picker-item-cmd mono";
+      cmd.textContent = item.command;
+      text.appendChild(name);
+      text.appendChild(cmd);
+      btn.appendChild(pickerItemIcon(item));
+      btn.appendChild(text);
+      btn.addEventListener("click", () => applyPickerItem(item));
+      container.appendChild(btn);
+    });
+  }
+
+  function renderAppPickerLists() {
+    const query = String((els.appPickerSearch && els.appPickerSearch.value) || "")
+      .trim()
+      .toLowerCase();
+    const commands = COMMON_COMMANDS.filter(
+      (item) =>
+        matchesPickerQuery(item.name, query) || matchesPickerQuery(item.command, query)
+    );
+    const apps = (installedAppsCache || []).filter(
+      (item) =>
+        matchesPickerQuery(item.name, query) || matchesPickerQuery(item.command, query)
+    );
+    renderPickerList(els.appPickerCommands, commands, "NO MATCHING COMMANDS");
+    renderPickerList(
+      els.appPickerApps,
+      apps,
+      installedAppsCache ? "NO MATCHING APPS" : "LOADING APPS…"
+    );
+    if (els.appPickerStatus) {
+      if (installedAppsError && !(installedAppsCache && installedAppsCache.length)) {
+        els.appPickerStatus.hidden = false;
+        els.appPickerStatus.textContent =
+          "APP DISCOVERY FAILED — TYPE A COMMAND / PATH MANUALLY";
+      } else {
+        els.appPickerStatus.hidden = true;
+        els.appPickerStatus.textContent = "";
+      }
+    }
+  }
+
+  async function loadInstalledApps() {
+    if (installedAppsCache) {
+      renderAppPickerLists();
+      return installedAppsCache;
+    }
+    if (installedAppsPromise) return installedAppsPromise;
+    installedAppsPromise = (async () => {
+      try {
+        const response = await fetchWithTimeout(
+          localBridge + "/api/apps",
+          { cache: "no-store" },
+          12000
+        );
+        const data = await response.json().catch(() => ({}));
+        const apps = Array.isArray(data.apps) ? data.apps : [];
+        installedAppsCache = apps
+          .map((item) => ({
+            kind: "app",
+            name: String(item.name || "").trim(),
+            command: String(item.command || "").trim(),
+          }))
+          .filter((item) => item.name && item.command);
+        installedAppsError = String(data.error || "");
+        if (!response.ok) {
+          installedAppsError = installedAppsError || "Could not load installed apps";
+        }
+      } catch (error) {
+        installedAppsCache = installedAppsCache || [];
+        installedAppsError = error && error.message ? error.message : "Could not load installed apps";
+      } finally {
+        installedAppsPromise = null;
+        if (isAppPickerOpen()) renderAppPickerLists();
+      }
+      return installedAppsCache;
+    })();
+    return installedAppsPromise;
+  }
+
+  function applyPickerItem(item) {
+    const s = activeSlot();
+    if (!s || !item || !item.command) return;
+    s.command = String(item.command).slice(0, COMMAND_MAX);
+    s.kind = item.kind === "app" ? "app" : "command";
+    const nextLabel = item.label || pickerLabel(item.name);
+    if (nextLabel) s.label = nextLabel.slice(0, LABEL_MAX);
+    closeAppPicker();
+    renderEditor();
+    renderGrid();
+    renderProfiles();
+    markDirty(true);
+    persistProfiles();
+    toast(s.kind === "app" ? "APP SELECTED" : "COMMAND SELECTED", "success");
+  }
+
+  function openAppPicker() {
+    if (!activeSlot() || !els.appPickerModal) return;
+    els.appPickerModal.hidden = false;
+    if (els.appPickerSearch) {
+      els.appPickerSearch.value = "";
+      els.appPickerSearch.focus();
+    }
+    renderAppPickerLists();
+    loadInstalledApps();
   }
 
   function wireEvents() {
@@ -1409,8 +2462,9 @@
       if (!s) return;
       s.command = e.target.value.slice(0, COMMAND_MAX);
       if (e.target.value !== s.command) e.target.value = s.command;
+      s.kind = "";
       els.commandCount.textContent = String(s.command.length);
-      updateCommandKindUI(s.command);
+      updateCommandKindUI(s.command, s.kind);
       const v = validateCommand(s.command);
       els.commandError.hidden = v.ok;
       els.commandError.textContent = v.message;
@@ -1426,6 +2480,16 @@
     els.customColorInput.addEventListener("change", (e) => applyColor(e.target.value));
 
     els.clearSlotBtn.addEventListener("click", () => clearActiveSlot(false));
+    if (els.appPickerBtn) els.appPickerBtn.addEventListener("click", openAppPicker);
+    if (els.appPickerCloseBtn) els.appPickerCloseBtn.addEventListener("click", closeAppPicker);
+    if (els.appPickerSearch) {
+      els.appPickerSearch.addEventListener("input", renderAppPickerLists);
+    }
+    if (els.appPickerModal) {
+      els.appPickerModal.addEventListener("click", (e) => {
+        if (e.target === els.appPickerModal) closeAppPicker();
+      });
+    }
     els.saveBtn.addEventListener("click", saveAndShowJson);
     els.closeModalBtn.addEventListener("click", closeJsonModal);
     els.formatJsonBtn.addEventListener("click", formatJsonInModal);
@@ -1483,6 +2547,11 @@
       if (!els.jsonModal.hidden) {
         e.preventDefault();
         closeJsonModal();
+        return;
+      }
+      if (isAppPickerOpen()) {
+        e.preventDefault();
+        closeAppPicker();
         return;
       }
     }
@@ -1544,11 +2613,23 @@
     renderAbout();
     markDirty(false);
     wireEvents();
+    wireSystemEvents();
+    setupInstallPrompt();
     showPage("dashboard");
     setInterval(tickClock, 1000);
     setInterval(pollBridgeStatus, 2000);
+    let systemTick = 0;
+    setInterval(() => {
+      if (!state.backend.reachable) return;
+      systemTick += 1;
+      // Live while the System page is open, occasional refresh elsewhere.
+      if (state.currentPage === "system" || systemTick % 3 === 0) refreshSystem();
+    }, 5000);
     tickClock();
-    pollBridgeStatus();
+    await pollBridgeStatus();
+    await refreshSystem();
+    await resumeTaskWatch();
+    registerServiceWorker();
   }
 
   boot();

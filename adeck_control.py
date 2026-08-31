@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import re
+import secrets
 import subprocess
 import sys
 import time
@@ -21,8 +22,11 @@ BASE_DIR = Path(__file__).resolve().parent
 VENV_PYTHON = BASE_DIR / ".venv" / "Scripts" / "python.exe"
 VENV_PYTHONW = BASE_DIR / ".venv" / "Scripts" / "pythonw.exe"
 DECK = BASE_DIR / "deck.py"
+CONTROL_SCRIPT = Path(__file__).resolve()
 REQUIREMENTS = BASE_DIR / "requirements.txt"
 INSTALL_FIRMWARE = BASE_DIR / "install_firmware.py"
+WEB_DIR = BASE_DIR / "ADeck Web app"
+APP_ICON = WEB_DIR / "adeck.ico"
 HEALTH_URL = "http://127.0.0.1:8765/api/status"
 WEB_URL = "http://127.0.0.1:8765/"
 SERVICE_NAME = "ADeck"
@@ -35,8 +39,17 @@ STDOUT_LOG = LOCAL_DATA / "runtime.stdout.log"
 STDERR_LOG = LOCAL_DATA / "runtime.stderr.log"
 LOCK_PATH = LOCAL_DATA / "runtime.lock"
 RUNTIME_PATH = LOCAL_DATA / "runtime.json"
+TASKS_DIR = LOCAL_DATA / "tasks"
+INTEGRATION_PATH = LOCAL_DATA / "integration.json"
 BUNDLED_CLI = BASE_DIR / ".tools" / "arduino-cli" / "arduino-cli.exe"
 REPAIR_ACTION = "ADeck-Control.bat -> Install / Repair (or Stop, then Start)"
+SHORTCUT_NAME = "ADeck.lnk"
+URL_SCHEME = "adeck"
+TASK_ID_PATTERN = re.compile(r"[0-9]{8}-[0-9]{6}-[0-9a-f]{4}")
+TASK_OUTPUT_LIMIT = 400
+TASK_HISTORY = 20
+TASK_STALE_SECONDS = 180
+APP_BROWSERS = ("brave.exe", "chrome.exe", "msedge.exe", "vivaldi.exe", "chromium.exe")
 
 
 @dataclass
@@ -962,11 +975,28 @@ def ensure_cli(debug: bool) -> None:
     debug_print(debug, "Arduino CLI ready")
 
 
+def noninteractive() -> bool:
+    """True when nobody can answer a prompt (background task, no console).
+
+    Windows reports the NUL device as a TTY, so an explicit flag is needed for
+    detached task processes.
+    """
+    if os.environ.get("ADECK_NONINTERACTIVE", "").strip().lower() in {"1", "true", "yes", "on"}:
+        return True
+    try:
+        return not sys.stdin.isatty()
+    except (AttributeError, ValueError, OSError):
+        return True
+
+
 def ask_yes_no(prompt: str, default: bool = False) -> bool:
-    if not sys.stdin.isatty():
+    if noninteractive():
         return default
     suffix = " [Y/n] " if default else " [y/N] "
-    answer = input(prompt + suffix).strip().lower()
+    try:
+        answer = input(prompt + suffix).strip().lower()
+    except (EOFError, OSError):
+        return default
     if not answer:
         return default
     return answer in {"y", "yes"}
@@ -1053,6 +1083,613 @@ def cmd_reinstall_firmware(debug: bool = False) -> int:
     return cmd_start(open_browser=False, debug=debug)
 
 
+def cmd_restart(debug: bool = False) -> int:
+    print("ADeck Restart")
+    print("=" * 40)
+    cmd_stop(debug)
+    return cmd_start(open_browser=False, debug=debug)
+
+
+# --- background tasks ----------------------------------------------------
+# The web UI triggers maintenance work through detached task processes so a
+# task keeps running (and keeps logging) even while the backend restarts.
+
+TASK_ACTIONS: dict[str, Callable[[bool], int]] = {
+    "check": lambda debug: cmd_check(debug),
+    "status": lambda debug: cmd_status(),
+    "errors": lambda debug: cmd_errors(),
+    "start": lambda debug: cmd_start(open_browser=False, debug=debug),
+    "stop": lambda debug: cmd_stop(debug),
+    "restart": lambda debug: cmd_restart(debug),
+    "repair": lambda debug: cmd_repair(debug=debug, force_firmware=False),
+    "reinstall-firmware": lambda debug: cmd_reinstall_firmware(debug),
+}
+
+# "stop" is deliberate, everything else here should end with a live service.
+TASK_RESTORE_SERVICE = frozenset({"restart", "repair", "reinstall-firmware", "start"})
+
+
+def _task_paths(task_id: str) -> tuple[Path, Path]:
+    return TASKS_DIR / f"{task_id}.json", TASKS_DIR / f"{task_id}.log"
+
+
+def _write_json(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_name(path.name + ".tmp")
+    temp.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    os.replace(temp, path)
+
+
+def _read_json(path: Path) -> dict | None:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def tail_lines(path: Path, limit: int = TASK_OUTPUT_LIMIT, max_bytes: int = 256 * 1024) -> list[str]:
+    """Last `limit` lines of a log file, reading only the tail of the file."""
+    try:
+        size = path.stat().st_size
+        with path.open("rb") as handle:
+            if size > max_bytes:
+                handle.seek(size - max_bytes)
+                handle.readline()
+            data = handle.read()
+    except OSError:
+        return []
+    text = data.decode("utf-8", errors="replace")
+    return [line.rstrip() for line in text.splitlines()][-max(1, limit) :]
+
+
+def _prune_tasks(keep: int = TASK_HISTORY) -> None:
+    try:
+        files = sorted(TASKS_DIR.glob("*.json"), key=lambda item: item.name, reverse=True)
+    except OSError:
+        return
+    for path in files[keep:]:
+        for victim in (path, path.with_suffix(".log")):
+            try:
+                victim.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
+def start_task(action: str, *, debug: bool = False) -> dict:
+    """Launch a detached task process and return its initial record."""
+    if action not in TASK_ACTIONS:
+        raise ValueError(f"Unknown task action: {action}")
+    TASKS_DIR.mkdir(parents=True, exist_ok=True)
+    _prune_tasks()
+    task_id = f"{time.strftime('%Y%m%d-%H%M%S')}-{secrets.token_hex(2)}"
+    json_path, log_path = _task_paths(task_id)
+    record = {
+        "id": task_id,
+        "action": action,
+        "state": "starting",
+        "started_at": time.time(),
+        "finished_at": None,
+        "exit_code": None,
+        "pid": None,
+    }
+    _write_json(json_path, record)
+    log_path.write_text("", encoding="utf-8")
+
+    executable = VENV_PYTHON if VENV_PYTHON.is_file() else Path(sys.executable)
+    command = [
+        str(executable),
+        str(CONTROL_SCRIPT),
+        "task",
+        "--task-id",
+        task_id,
+        "--task-action",
+        action,
+    ]
+    if debug:
+        command.append("--debug")
+    creationflags = 0
+    if os.name == "nt":
+        creationflags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(
+            subprocess, "CREATE_NEW_PROCESS_GROUP", 0
+        )
+    # Tasks are unattended: no prompt may block them, and Windows reports NUL
+    # as a TTY, so the flag has to be explicit for the task and its children.
+    environment = dict(os.environ, ADECK_NONINTERACTIVE="1")
+    try:
+        with log_path.open("a", encoding="utf-8") as log:
+            process = subprocess.Popen(
+                command,
+                cwd=str(BASE_DIR),
+                stdin=subprocess.DEVNULL,
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                creationflags=creationflags,
+                close_fds=True,
+                env=environment,
+            )
+    except OSError as error:
+        record.update({"state": "done", "exit_code": 1, "finished_at": time.time()})
+        _write_json(json_path, record)
+        with log_path.open("a", encoding="utf-8") as log:
+            log.write(f"Could not start task: {error}\n")
+        return record
+    record.update({"state": "running", "pid": process.pid})
+    _write_json(json_path, record)
+    return record
+
+
+def read_task(task_id: str, *, lines: int = TASK_OUTPUT_LIMIT) -> dict | None:
+    if not TASK_ID_PATTERN.fullmatch(task_id or ""):
+        return None
+    json_path, log_path = _task_paths(task_id)
+    record = _read_json(json_path)
+    if record is None:
+        return None
+    if record.get("state") == "running":
+        try:
+            idle = time.time() - max(json_path.stat().st_mtime, log_path.stat().st_mtime)
+        except OSError:
+            idle = 0
+        if idle > TASK_STALE_SECONDS:
+            record["state"] = "unknown"
+    record["output"] = tail_lines(log_path, lines)
+    return record
+
+
+def list_tasks(limit: int = 10) -> list[dict]:
+    try:
+        files = sorted(TASKS_DIR.glob("*.json"), key=lambda item: item.name, reverse=True)
+    except OSError:
+        return []
+    records = []
+    for path in files[: max(1, limit)]:
+        record = _read_json(path)
+        if record:
+            records.append(record)
+    return records
+
+
+def cmd_task(task_id: str, action: str, debug: bool = False) -> int:
+    """Task body: runs inside the detached process, logging to the task log."""
+    if action not in TASK_ACTIONS:
+        print(f"Unknown task action: {action}")
+        return 2
+    if not TASK_ID_PATTERN.fullmatch(task_id or ""):
+        print(f"Invalid task id: {task_id}")
+        return 2
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+        sys.stderr.reconfigure(line_buffering=True)
+    except (AttributeError, ValueError, OSError):
+        pass
+    json_path, _ = _task_paths(task_id)
+    record = _read_json(json_path) or {
+        "id": task_id,
+        "action": action,
+        "started_at": time.time(),
+    }
+    record.update({"state": "running", "pid": os.getpid(), "exit_code": None})
+    _write_json(json_path, record)
+    print(f"[{time.strftime('%H:%M:%S')}] {action} started")
+    code = 1
+    try:
+        code = TASK_ACTIONS[action](debug)
+        # Maintenance that failed midway can leave the service down. The UI is
+        # served by that service, so bring it back instead of stranding the app.
+        if action in TASK_RESTORE_SERVICE and not backend_healthy():
+            print()
+            print("Service is not running after this task; starting it again...")
+            if cmd_start(open_browser=False, debug=debug) == 0 and code != 0:
+                print("Service restored. The reported problem above still needs attention.")
+    except KeyboardInterrupt:
+        print("Cancelled.")
+        code = 130
+    except Exception as error:
+        print(f"Task failed: {error}")
+        if debug:
+            traceback.print_exc()
+        code = 1
+    finally:
+        print(f"[{time.strftime('%H:%M:%S')}] {action} finished (exit code {code})")
+        record.update(
+            {"state": "done", "exit_code": code, "finished_at": time.time()}
+        )
+        _write_json(json_path, record)
+    return code
+
+
+# --- Windows desktop integration ----------------------------------------
+
+
+def _powershell(script: str, *, env: dict[str, str] | None = None, timeout: float = 60):
+    environment = dict(os.environ)
+    if env:
+        environment.update(env)
+    return subprocess.run(
+        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
+        cwd=str(BASE_DIR),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=timeout,
+        env=environment,
+    )
+
+
+_SHORTCUT_SCRIPT = """
+$ErrorActionPreference = 'Stop'
+$shell = New-Object -ComObject WScript.Shell
+$results = @{}
+foreach ($slot in $env:ADECK_SLOTS.Split(',')) {
+  if (-not $slot) { continue }
+  $folderName = [Environment]::GetEnvironmentVariable("ADECK_FOLDER_$slot")
+  $folder = [Environment]::GetFolderPath($folderName)
+  if (-not $folder) { continue }
+  if (-not (Test-Path -LiteralPath $folder)) {
+    New-Item -ItemType Directory -Path $folder -Force | Out-Null
+  }
+  $path = Join-Path $folder $env:ADECK_LINK_NAME
+  $link = $shell.CreateShortcut($path)
+  $link.TargetPath = [Environment]::GetEnvironmentVariable("ADECK_TARGET_$slot")
+  $link.Arguments = [Environment]::GetEnvironmentVariable("ADECK_ARGS_$slot")
+  $link.WorkingDirectory = $env:ADECK_WORKDIR
+  $link.Description = 'ADeck'
+  if ($env:ADECK_ICON) { $link.IconLocation = $env:ADECK_ICON }
+  $link.Save()
+  $results[$slot] = $path
+}
+$results | ConvertTo-Json -Compress
+"""
+
+
+def _create_shortcut(slots: dict[str, tuple[str, str, str]]) -> dict[str, str]:
+    """Create .lnk files. slots maps a name to (shell folder, target, arguments)."""
+    if os.name != "nt":
+        raise RuntimeError("Shortcuts are only supported on Windows")
+    if not slots:
+        return {}
+    env = {
+        "ADECK_SLOTS": ",".join(slots),
+        "ADECK_LINK_NAME": SHORTCUT_NAME,
+        "ADECK_WORKDIR": str(BASE_DIR),
+        "ADECK_ICON": str(APP_ICON) if APP_ICON.is_file() else "",
+    }
+    for slot, (folder, target, arguments) in slots.items():
+        env[f"ADECK_FOLDER_{slot}"] = folder
+        env[f"ADECK_TARGET_{slot}"] = target
+        env[f"ADECK_ARGS_{slot}"] = arguments
+    result = _powershell(_SHORTCUT_SCRIPT, env=env)
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "shortcut creation failed").strip()
+        raise RuntimeError(detail.splitlines()[0][:300])
+    payload = _read_powershell_json(result.stdout)
+    return {str(key): str(value) for key, value in payload.items()}
+
+
+def _read_powershell_json(text: str) -> dict:
+    for line in reversed((text or "").strip().splitlines()):
+        candidate = line.strip()
+        if candidate.startswith("{"):
+            try:
+                payload = json.loads(candidate)
+            except ValueError:
+                continue
+            if isinstance(payload, dict):
+                return payload
+    return {}
+
+
+def _launcher_target() -> tuple[str, str]:
+    """Target/arguments used by the ADeck app shortcut."""
+    return str(VENV_PYTHONW), f'"{CONTROL_SCRIPT}" app'
+
+
+def _autostart_target() -> tuple[str, str]:
+    return str(VENV_PYTHONW), f'"{DECK}"'
+
+
+def _shortcut_candidates() -> dict[str, list[Path]]:
+    """Best-effort shortcut locations, used for state reporting without PowerShell."""
+    appdata = Path(os.environ.get("APPDATA", Path.home()))
+    home = Path(os.environ.get("USERPROFILE", Path.home()))
+    onedrive = os.environ.get("OneDrive") or os.environ.get("OneDriveConsumer")
+    desktops = [home / "Desktop" / SHORTCUT_NAME]
+    if onedrive:
+        desktops.append(Path(onedrive) / "Desktop" / SHORTCUT_NAME)
+    programs = appdata / "Microsoft" / "Windows" / "Start Menu" / "Programs"
+    return {
+        "desktop": desktops,
+        "start_menu": [programs / SHORTCUT_NAME],
+        "startup": [programs / "Startup" / SHORTCUT_NAME],
+    }
+
+
+def _record_integration(updates: dict) -> None:
+    payload = _read_json(INTEGRATION_PATH) or {}
+    payload.update(updates)
+    payload["updated_at"] = time.time()
+    try:
+        _write_json(INTEGRATION_PATH, payload)
+    except OSError:
+        pass
+
+
+def _existing_shortcut(slot: str) -> Path | None:
+    recorded = _read_json(INTEGRATION_PATH) or {}
+    candidates: list[Path] = []
+    value = recorded.get(f"{slot}_path")
+    if isinstance(value, str) and value:
+        candidates.append(Path(value))
+    candidates.extend(_shortcut_candidates().get(slot, []))
+    for path in candidates:
+        try:
+            if path.is_file():
+                return path
+        except OSError:
+            continue
+    return None
+
+
+def create_app_shortcuts(desktop: bool = True, start_menu: bool = True) -> dict[str, str]:
+    target, arguments = _launcher_target()
+    slots: dict[str, tuple[str, str, str]] = {}
+    if desktop:
+        slots["desktop"] = ("Desktop", target, arguments)
+    if start_menu:
+        slots["start_menu"] = ("Programs", target, arguments)
+    created = _create_shortcut(slots)
+    _record_integration({f"{slot}_path": path for slot, path in created.items()})
+    return created
+
+
+def remove_app_shortcuts() -> list[str]:
+    removed = []
+    for slot in ("desktop", "start_menu"):
+        path = _existing_shortcut(slot)
+        if path is not None:
+            try:
+                path.unlink()
+                removed.append(str(path))
+            except OSError:
+                continue
+    return removed
+
+
+def set_autostart(enabled: bool) -> str | None:
+    """Create or remove the Windows Startup shortcut for the backend."""
+    if enabled:
+        target, arguments = _autostart_target()
+        created = _create_shortcut({"startup": ("Startup", target, arguments)})
+        path = created.get("startup")
+        if path:
+            _record_integration({"startup_path": path})
+        return path
+    path = _existing_shortcut("startup")
+    if path is None:
+        return None
+    try:
+        path.unlink()
+    except OSError as error:
+        raise RuntimeError(f"Could not remove autostart shortcut: {error}") from error
+    return str(path)
+
+
+def _protocol_command() -> str:
+    return f'"{VENV_PYTHONW}" "{CONTROL_SCRIPT}" app --uri "%1"'
+
+
+def register_protocol() -> str:
+    """Register adeck:// so the app window can be started from a link."""
+    if os.name != "nt":
+        raise RuntimeError("The adeck:// handler is only supported on Windows")
+    import winreg
+
+    command = _protocol_command()
+    root = winreg.HKEY_CURRENT_USER
+    with winreg.CreateKey(root, rf"Software\Classes\{URL_SCHEME}") as key:
+        winreg.SetValueEx(key, None, 0, winreg.REG_SZ, "URL:ADeck")
+        winreg.SetValueEx(key, "URL Protocol", 0, winreg.REG_SZ, "")
+    if APP_ICON.is_file():
+        with winreg.CreateKey(root, rf"Software\Classes\{URL_SCHEME}\DefaultIcon") as key:
+            winreg.SetValueEx(key, None, 0, winreg.REG_SZ, f"{APP_ICON},0")
+    with winreg.CreateKey(root, rf"Software\Classes\{URL_SCHEME}\shell\open\command") as key:
+        winreg.SetValueEx(key, None, 0, winreg.REG_SZ, command)
+    _record_integration({"protocol_command": command})
+    return command
+
+
+def protocol_registered() -> bool:
+    if os.name != "nt":
+        return False
+    try:
+        import winreg
+
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER, rf"Software\Classes\{URL_SCHEME}\shell\open\command"
+        ) as key:
+            value = winreg.QueryValueEx(key, None)[0]
+    except OSError:
+        return False
+    return str(CONTROL_SCRIPT).casefold() in str(value).casefold()
+
+
+def integration_state() -> dict:
+    desktop = _existing_shortcut("desktop")
+    start_menu = _existing_shortcut("start_menu")
+    startup = _existing_shortcut("startup")
+    return {
+        "desktop_shortcut": desktop is not None,
+        "desktop_path": str(desktop) if desktop else None,
+        "start_menu_shortcut": start_menu is not None,
+        "start_menu_path": str(start_menu) if start_menu else None,
+        "autostart": startup is not None,
+        "autostart_path": str(startup) if startup else None,
+        "protocol_handler": protocol_registered(),
+        "url_scheme": f"{URL_SCHEME}://start",
+        "shortcuts_supported": os.name == "nt",
+    }
+
+
+def _registry_string(root, path: str, name: str | None = None) -> str:
+    try:
+        import winreg
+
+        with winreg.OpenKey(root, path) as key:
+            return str(winreg.QueryValueEx(key, name)[0])
+    except OSError:
+        return ""
+
+
+def _executable_from_command(command: str) -> Path | None:
+    text = (command or "").strip()
+    if not text:
+        return None
+    if text.startswith('"'):
+        end = text.find('"', 1)
+        candidate = Path(os.path.expandvars(text[1:end] if end != -1 else text[1:]))
+        return candidate if candidate.is_file() else None
+    expanded = os.path.expandvars(text)
+    if Path(expanded).is_file():
+        return Path(expanded)
+    # Unquoted registry commands may still contain spaces in the program path.
+    parts = expanded.split(" ")
+    for count in range(1, len(parts)):
+        candidate = Path(" ".join(parts[:count]))
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def find_app_browser() -> Path | None:
+    """A Chromium-family browser that supports --app windows."""
+    if os.name != "nt":
+        return None
+    import winreg
+
+    progid = _registry_string(
+        winreg.HKEY_CURRENT_USER,
+        r"SOFTWARE\Microsoft\Windows\Shell\Associations\UrlAssociations\http\UserChoice",
+        "ProgId",
+    )
+    if progid:
+        for root in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+            command = _registry_string(root, rf"SOFTWARE\Classes\{progid}\shell\open\command")
+            executable = _executable_from_command(command)
+            if executable and executable.name.casefold() in APP_BROWSERS:
+                return executable
+    for name in APP_BROWSERS:
+        for root in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+            command = _registry_string(
+                root, rf"SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\{name}"
+            )
+            executable = _executable_from_command(command)
+            if executable:
+                return executable
+    return None
+
+
+def open_app_window(url: str = WEB_URL) -> bool:
+    """Open ADeck in a standalone app window; fall back to the default browser."""
+    browser = find_app_browser()
+    if browser is not None:
+        try:
+            subprocess.Popen(
+                [str(browser), f"--app={url}"],
+                cwd=str(BASE_DIR),
+                close_fds=True,
+            )
+            return True
+        except OSError:
+            pass
+    webbrowser.open(url)
+    return False
+
+
+def cmd_app(debug: bool = False) -> int:
+    """Desktop entry point: make sure the backend is up, then show the app window."""
+    started = cmd_start(open_browser=False, debug=debug)
+    # Open the window either way: when startup failed the UI explains the state.
+    open_app_window()
+    return started
+
+
+def cmd_shortcuts(debug: bool = False, remove: bool = False) -> int:
+    print("ADeck Desktop Shortcuts")
+    print("=" * 40)
+    try:
+        if remove:
+            removed = remove_app_shortcuts()
+            for path in removed:
+                print(f"Removed {path}")
+            if not removed:
+                print("No ADeck shortcuts were present.")
+            return 0
+        created = create_app_shortcuts()
+        for slot, path in created.items():
+            print(f"Created {slot.replace('_', ' ')} shortcut: {path}")
+        if not created:
+            print("No shortcuts were created.")
+            return 1
+        return 0
+    except Exception as error:
+        if debug:
+            traceback.print_exc()
+        print(f"Shortcut update failed: {error}")
+        return 1
+
+
+def cmd_autostart(enable: bool, debug: bool = False) -> int:
+    print("ADeck Autostart")
+    print("=" * 40)
+    try:
+        path = set_autostart(enable)
+        if enable:
+            print(f"ADeck will start with Windows: {path}")
+        elif path:
+            print(f"Autostart removed: {path}")
+        else:
+            print("Autostart was not enabled.")
+        return 0
+    except Exception as error:
+        if debug:
+            traceback.print_exc()
+        print(f"Autostart update failed: {error}")
+        return 1
+
+
+def cmd_protocol(debug: bool = False) -> int:
+    print("ADeck URL Handler")
+    print("=" * 40)
+    try:
+        command = register_protocol()
+        print(f"Registered {URL_SCHEME}://  ->  {command}")
+        return 0
+    except Exception as error:
+        if debug:
+            traceback.print_exc()
+        print(f"Could not register {URL_SCHEME}://: {error}")
+        return 1
+
+
+def cmd_integrate(debug: bool = False) -> int:
+    """Everything needed to launch ADeck like an installed desktop app."""
+    print("ADeck Desktop Integration")
+    print("=" * 40)
+    failures = 0
+    failures += cmd_shortcuts(debug)
+    failures += cmd_protocol(debug)
+    failures += cmd_autostart(True, debug)
+    state = integration_state()
+    print()
+    print(f"Desktop shortcut:  {'yes' if state['desktop_shortcut'] else 'no'}")
+    print(f"Start Menu:        {'yes' if state['start_menu_shortcut'] else 'no'}")
+    print(f"Autostart:         {'yes' if state['autostart'] else 'no'}")
+    print(f"adeck:// handler:  {'yes' if state['protocol_handler'] else 'no'}")
+    return 1 if failures else 0
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="ADeck control helper")
     parser.add_argument(
@@ -1064,12 +1701,24 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "logs",
             "start",
             "stop",
+            "restart",
             "repair",
             "reinstall-firmware",
+            "app",
+            "shortcuts",
+            "autostart",
+            "protocol",
+            "integrate",
+            "task",
         ],
     )
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--no-browser", action="store_true")
+    parser.add_argument("--task-id", default="")
+    parser.add_argument("--task-action", default="")
+    parser.add_argument("--remove", action="store_true", help="shortcuts: delete instead of create")
+    parser.add_argument("--disable", action="store_true", help="autostart: turn off")
+    parser.add_argument("--uri", default="", help="ignored; accepts the adeck:// argument")
     return parser.parse_args(argv)
 
 
@@ -1085,8 +1734,15 @@ def main(argv: list[str] | None = None) -> int:
         "logs": cmd_logs,
         "start": lambda: cmd_start(open_browser=not args.no_browser, debug=debug),
         "stop": lambda: cmd_stop(debug),
+        "restart": lambda: cmd_restart(debug),
         "repair": lambda: cmd_repair(debug=debug, force_firmware=False),
         "reinstall-firmware": lambda: cmd_reinstall_firmware(debug),
+        "app": lambda: cmd_app(debug),
+        "shortcuts": lambda: cmd_shortcuts(debug, remove=args.remove),
+        "autostart": lambda: cmd_autostart(not args.disable, debug),
+        "protocol": lambda: cmd_protocol(debug),
+        "integrate": lambda: cmd_integrate(debug),
+        "task": lambda: cmd_task(args.task_id, args.task_action, debug),
     }
     try:
         return handlers[args.command]()

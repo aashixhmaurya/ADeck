@@ -314,9 +314,27 @@ try {
     $shortcutCreated = $true
   }
 
+  Invoke-Stage "Create desktop app entry" {
+    # Desktop/Start Menu icon + adeck:// handler. Not fatal: ADeck still runs
+    # from Start ADeck.bat and the browser if this step cannot complete.
+    & $python (Join-Path $root "adeck_control.py") shortcuts
+    if ($LASTEXITCODE -ne 0) {
+      Write-Host "Could not create the desktop icon. Use the System page in ADeck to retry." -ForegroundColor Yellow
+    }
+    & $python (Join-Path $root "adeck_control.py") protocol
+    if ($LASTEXITCODE -ne 0) {
+      Write-Host "Could not register the adeck:// handler (optional)." -ForegroundColor Yellow
+    }
+    $global:LASTEXITCODE = 0
+  }
+
   Invoke-Stage "Open ADeck" {
-    Write-Host "Opening http://127.0.0.1:8765/ ..."
-    Start-Process "http://127.0.0.1:8765/"
+    Write-Host "Opening ADeck in its own app window ..."
+    & $python (Join-Path $root "adeck_control.py") app
+    if ($LASTEXITCODE -ne 0) {
+      Start-Process "http://127.0.0.1:8765/"
+    }
+    $global:LASTEXITCODE = 0
   }
 
   $finalStatus = Get-ADeckHealth
@@ -333,7 +351,9 @@ try {
   Write-Host "  Hardware: $hardwareState"
   Write-Host ""
   Write-Host "ADeck will start automatically with Windows."
-  Write-Host "Daily use: Start ADeck.bat   |   Tools: ADeck-Control.bat"
+  Write-Host "Daily use: the ADeck icon on your desktop or Start Menu."
+  Write-Host "Inside the app: System page (status, restart, repair, firmware, logs)."
+  Write-Host "Fallback tools: Start ADeck.bat   |   ADeck-Control.bat"
   exit 0
 } catch {
   Write-Host ""

@@ -5,6 +5,13 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>ADeck — Local Hardware Configurator</title>
+  <meta name="application-name" content="ADeck" />
+  <meta name="theme-color" content="#f2f1ee" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#181816" media="(prefers-color-scheme: dark)" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./favicon.ico" sizes="any" />
+  <link rel="icon" type="image/png" href="./icon-192.png" sizes="192x192" />
+  <link rel="apple-touch-icon" href="./icon-192.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Doto:ROND,wght@0..100,100..900&display=swap" rel="stylesheet" />
@@ -23,6 +30,7 @@
 
     <nav class="nav" role="navigation" aria-label="Primary">
       <button type="button" class="nav-btn active" data-page="dashboard" aria-current="page">Dashboard</button>
+      <button type="button" class="nav-btn" data-page="system">System<span class="nav-dot" id="navSystemDot" hidden aria-hidden="true"></span></button>
       <button type="button" class="nav-btn" data-page="settings">Settings</button>
       <button type="button" class="nav-btn" data-page="about">About</button>
     </nav>
@@ -93,7 +101,7 @@
               <div class="screen-chrome">
                 <span class="screen-title mono">ADECK</span>
                 <span class="screen-mid mono" id="screenActiveKey">K—</span>
-                <span class="screen-conn mono" id="deviceConnBadge">LOCAL</span>
+                <span class="screen-conn mono" id="deviceConnBadge">OFFLINE</span>
               </div>
               <div class="grid" id="buttonGrid" role="group" aria-label="Macro keys"></div>
               <div class="screen-footer mono">
@@ -144,18 +152,21 @@
           <span id="labelHint" class="field-hint mono muted">Shown on device key</span>
         </label>
 
-        <label class="field">
+        <div class="field">
           <span class="field-label">
             COMMAND / PATH
             <em class="mono muted"><span id="commandCount">0</span> / 256</em>
           </span>
-          <div class="command-wrap">
-            <span id="commandKindBadge" class="command-kind mono" data-kind="empty">—</span>
-            <input type="text" id="commandInput" class="mono command-input" maxlength="256" placeholder="C:\Apps\tool.exe" aria-describedby="commandHint" />
+          <div class="command-row">
+            <div class="command-wrap">
+              <span id="commandKindBadge" class="command-kind mono" data-kind="empty">—</span>
+              <input type="text" id="commandInput" class="mono command-input" maxlength="256" placeholder="C:\Apps\tool.exe" aria-describedby="commandHint" />
+            </div>
+            <button type="button" id="appPickerBtn" class="ghost-btn command-app-btn" title="Choose a command or installed app">ADD</button>
           </div>
           <span id="commandHint" class="field-hint mono muted">Shell command, URL, or file path</span>
           <span id="commandError" class="field-error mono" hidden role="alert"></span>
-        </label>
+        </div>
 
         <div class="field">
           <div class="color-field-head">
@@ -175,6 +186,133 @@
       </form>
     </aside>
   </main>
+
+  <section id="page-system" class="page page-panel" hidden data-page="system" aria-label="System">
+    <div class="panel-inner panel-system">
+      <header class="panel-header">
+        <p class="panel-kicker mono muted">SERVICE &amp; HARDWARE</p>
+        <h2 class="panel-title mono">SYSTEM</h2>
+        <p class="panel-lead mono muted">Run and repair ADeck from here. The terminal is only needed for development.</p>
+      </header>
+
+      <div id="systemBanner" class="sys-banner" hidden role="status">
+        <div class="sys-banner-body">
+          <span class="sys-banner-title mono" id="systemBannerTitle">—</span>
+          <span class="sys-banner-text mono" id="systemBannerText">—</span>
+        </div>
+        <button type="button" id="systemBannerAction" class="save-btn" hidden>—</button>
+      </div>
+
+      <fieldset class="settings-group">
+        <legend class="mono">STATUS</legend>
+        <dl class="about-list mono sys-list">
+          <div class="about-row">
+            <dt>Service</dt>
+            <dd id="sysBackend" class="sys-value">—</dd>
+          </div>
+          <div class="about-row">
+            <dt>Hardware</dt>
+            <dd id="sysHardware" class="sys-value">—</dd>
+          </div>
+          <div class="about-row">
+            <dt>COM port</dt>
+            <dd id="sysPort" class="sys-value">—</dd>
+          </div>
+          <div class="about-row">
+            <dt>Firmware</dt>
+            <dd id="sysFirmware" class="sys-value">—</dd>
+          </div>
+          <div class="about-row">
+            <dt>Device sync</dt>
+            <dd id="sysSync" class="sys-value">—</dd>
+          </div>
+          <div class="about-row">
+            <dt>Configuration</dt>
+            <dd id="sysConfig" class="sys-value">—</dd>
+          </div>
+          <div class="about-row">
+            <dt>Setup</dt>
+            <dd id="sysSetup" class="sys-value">—</dd>
+          </div>
+        </dl>
+        <div class="settings-actions">
+          <button id="sysRefreshBtn" class="ghost-btn" type="button">REFRESH</button>
+        </div>
+      </fieldset>
+
+      <fieldset class="settings-group">
+        <legend class="mono">DEVICE</legend>
+        <label class="field">
+          <span class="field-label">SERIAL PORT</span>
+          <select id="sysPortSelect">
+            <option value="">AUTO-DETECT</option>
+          </select>
+          <span class="field-hint mono muted">Auto-detect finds the UNO R4 WiFi by its USB identity. Choose a port only if detection fails.</span>
+        </label>
+        <div class="settings-actions">
+          <button id="sysReconnectBtn" class="save-btn" type="button">RECONNECT BOARD</button>
+          <button id="sysResyncBtn" class="ghost-btn" type="button">RESYNC TO DEVICE</button>
+        </div>
+      </fieldset>
+
+      <fieldset class="settings-group">
+        <legend class="mono">SERVICE CONTROL</legend>
+        <div class="settings-actions">
+          <button id="sysRestartBtn" class="ghost-btn" type="button">RESTART SERVICE</button>
+          <button id="sysStopBtn" class="ghost-btn danger" type="button">STOP SERVICE</button>
+          <button id="sysViewLogBtn" class="ghost-btn" type="button">VIEW LOG</button>
+          <button id="sysLogsBtn" class="ghost-btn" type="button">OPEN LOG FOLDER</button>
+        </div>
+        <span class="field-hint mono muted">Stopping the service also closes this window's connection. Reopen ADeck from its desktop icon to start it again.</span>
+      </fieldset>
+
+      <fieldset class="settings-group">
+        <legend class="mono">DESKTOP APP</legend>
+        <dl class="about-list mono sys-list">
+          <div class="about-row">
+            <dt>App window</dt>
+            <dd id="sysInstalled" class="sys-value">—</dd>
+          </div>
+          <div class="about-row">
+            <dt>Desktop icon</dt>
+            <dd id="sysDesktop" class="sys-value">—</dd>
+          </div>
+          <div class="about-row">
+            <dt>Start with Windows</dt>
+            <dd id="sysAutostart" class="sys-value">—</dd>
+          </div>
+        </dl>
+        <div class="settings-actions">
+          <button id="sysInstallBtn" class="save-btn" type="button" hidden>INSTALL APP</button>
+          <button id="sysShortcutBtn" class="ghost-btn" type="button">CREATE DESKTOP ICON</button>
+          <button id="sysAutostartBtn" class="ghost-btn" type="button">START WITH WINDOWS</button>
+        </div>
+        <span id="sysInstallHint" class="field-hint mono muted">—</span>
+      </fieldset>
+
+      <fieldset class="settings-group sys-advanced">
+        <legend class="mono">ADVANCED / TROUBLESHOOTING</legend>
+        <span class="field-hint mono muted">Same maintenance as the control menu. Repair and firmware install stop the service for a moment and can take several minutes.</span>
+        <div class="settings-actions">
+          <button id="sysCheckBtn" class="ghost-btn" type="button">CHECK SYSTEM</button>
+          <button id="sysErrorsBtn" class="ghost-btn" type="button">SHOW ERRORS</button>
+          <button id="sysRepairBtn" class="ghost-btn" type="button">INSTALL / REPAIR</button>
+          <button id="sysFirmwareBtn" class="ghost-btn danger" type="button">REINSTALL FIRMWARE</button>
+        </div>
+      </fieldset>
+
+      <fieldset class="settings-group">
+        <legend class="mono">OUTPUT</legend>
+        <div class="sys-console-head">
+          <span class="mono muted" id="sysTaskLabel">Nothing has been run yet.</span>
+          <button id="sysClearOutputBtn" class="ghost-btn" type="button">CLEAR</button>
+        </div>
+        <pre id="sysOutput" class="json-out mono sys-console" aria-label="Maintenance output" aria-live="polite"></pre>
+      </fieldset>
+
+      <button type="button" class="ghost-btn" data-goto="dashboard">← DASHBOARD</button>
+    </div>
+  </section>
 
   <section id="page-settings" class="page page-panel" hidden data-page="settings" aria-label="Settings">
     <div class="panel-inner panel-settings">
@@ -231,6 +369,19 @@
         </fieldset>
 
         <fieldset class="settings-group">
+          <legend class="mono">APP LAUNCH</legend>
+          <label class="field">
+            <span class="field-label">IF APP IS ALREADY OPEN</span>
+            <select id="settingAppRelaunch" name="appRelaunchMode">
+              <option value="new">Open another window</option>
+              <option value="minimize">Minimize / restore the same app</option>
+              <option value="close">Close the same app</option>
+            </select>
+            <span class="field-hint mono muted">Only Windows apps such as Calculator, Notepad, or VS Code. Git and other shell commands are never toggled.</span>
+          </label>
+        </fieldset>
+
+        <fieldset class="settings-group">
           <legend class="mono">CONNECTIVITY</legend>
           <label class="field">
             <span class="field-label">WIFI MODE</span>
@@ -281,7 +432,8 @@
       </dl>
 
       <p class="mono muted about-note">
-        This dashboard configures profiles locally. Open index.html — no build step, no server.
+        This dashboard runs on the local ADeck service. Install it as a desktop app and manage the
+        service from the System page.
       </p>
 
       <button type="button" class="ghost-btn" data-goto="dashboard">← DASHBOARD</button>
@@ -301,6 +453,31 @@
       SAVE &amp; JSON
     </button>
   </footer>
+
+  <div class="modal" id="appPickerModal" hidden role="dialog" aria-modal="true" aria-labelledby="appPickerTitle">
+    <div class="modal-panel dialog-panel app-picker-panel">
+      <div class="modal-head">
+        <div class="modal-title-block">
+          <span class="mono muted modal-kicker">SLOT</span>
+          <h3 id="appPickerTitle">CHOOSE APP OR COMMAND</h3>
+        </div>
+        <button type="button" id="appPickerCloseBtn" class="ghost-btn danger" aria-label="Close app picker">CLOSE</button>
+      </div>
+      <div class="app-picker-body">
+        <label class="sr-only" for="appPickerSearch">Search apps and commands</label>
+        <input type="search" id="appPickerSearch" class="profile-search mono" placeholder="SEARCH…" autocomplete="off" />
+        <p id="appPickerStatus" class="field-hint mono muted" hidden></p>
+        <div class="app-picker-section">
+          <span class="app-picker-heading mono">COMMON / COMMANDS</span>
+          <div id="appPickerCommands" class="app-picker-list" role="listbox" aria-label="Common commands"></div>
+        </div>
+        <div class="app-picker-section">
+          <span class="app-picker-heading mono">INSTALLED APPS</span>
+          <div id="appPickerApps" class="app-picker-list" role="listbox" aria-label="Installed applications"></div>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <div class="modal" id="appDialog" hidden role="dialog" aria-modal="true" aria-labelledby="dialogTitle">
     <div class="modal-panel dialog-panel">
@@ -347,6 +524,30 @@
         <span class="mono muted" id="jsonCharCount">0 bytes</span>
       </div>
       <input type="file" id="importJsonFile" accept=".json,application/json" hidden />
+    </div>
+  </div>
+
+  <div class="modal" id="offlineOverlay" hidden role="alertdialog" aria-modal="true" aria-labelledby="offlineTitle">
+    <div class="modal-panel dialog-panel">
+      <div class="modal-head">
+        <div class="modal-title-block">
+          <span class="mono muted modal-kicker" id="offlineKicker">SERVICE</span>
+          <h3 id="offlineTitle">ADECK SERVICE IS NOT RUNNING</h3>
+        </div>
+      </div>
+      <div class="dialog-body">
+        <p id="offlineMessage" class="mono dialog-message">
+          This window is open, but the local ADeck service is not answering on 127.0.0.1:8765.
+          Saved profiles and device settings are untouched.
+        </p>
+        <p id="offlineHint" class="mono dialog-message muted">
+          Open ADeck from its desktop icon to start the service again.
+        </p>
+      </div>
+      <div class="dialog-foot">
+        <button type="button" id="offlineStartBtn" class="save-btn" hidden>START SERVICE</button>
+        <button type="button" id="offlineRetryBtn" class="ghost-btn">RETRY NOW</button>
+      </div>
     </div>
   </div>
 

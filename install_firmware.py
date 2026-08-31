@@ -86,6 +86,17 @@ def quiet_enabled() -> bool:
     return value in {"1", "true", "yes", "on"}
 
 
+def noninteractive() -> bool:
+    """True when no one can answer a prompt. Windows reports NUL as a TTY, so
+    background callers set ADECK_NONINTERACTIVE explicitly."""
+    if os.environ.get("ADECK_NONINTERACTIVE", "").strip().lower() in {"1", "true", "yes", "on"}:
+        return True
+    try:
+        return not sys.stdin.isatty()
+    except (AttributeError, ValueError, OSError):
+        return True
+
+
 def run_process(
     command: list[object],
     *,
@@ -599,7 +610,7 @@ def upload_with_recovery(cli: Path, board: PortInfo) -> str:
     except InstallError as error:
         last_error = error
 
-    if not sys.stdin.isatty():
+    if noninteractive():
         raise InstallError(
             "Automatic bootloader recovery failed. Double-press RESET on the UNO R4 "
             "WiFi, then rerun the installer from an interactive PowerShell window."
@@ -609,7 +620,13 @@ def upload_with_recovery(cli: Path, board: PortInfo) -> str:
         "\nAutomatic recovery failed. Double-press RESET on the UNO R4 WiFi now.",
         flush=True,
     )
-    input("Press Enter immediately after the double reset to scan for the bootloader...")
+    try:
+        input("Press Enter immediately after the double reset to scan for the bootloader...")
+    except (EOFError, OSError) as error:
+        raise InstallError(
+            "Automatic bootloader recovery failed and no console is available. "
+            "Double-press RESET, then rerun the installer from PowerShell."
+        ) from error
     recovery = wait_for_matching_port(cli, board, 20)
     if not recovery:
         raise InstallError(

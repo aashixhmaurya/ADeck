@@ -7,6 +7,8 @@ A little Stream Deck for your desk — but it's an Arduino UNO R4 WiFi with a 2.
 - Six customizable buttons with labels and colors
 - Multiple profiles, saved locally
 - Touch the screen → runs the mapped command on Windows
+- Installs as a desktop app (own window, desktop + Start Menu icon) — no URL typing
+- System page in the app: status, restart, reconnect, repair, firmware, logs
 - Web UI at `http://127.0.0.1:8765` — no internet needed
 - Auto-detects the UNO R4 WiFi COM port (no hardcoded COM3 nonsense)
 - Save in the browser syncs config to the board over USB
@@ -52,6 +54,12 @@ install.ps1            setup script (called by Setup ADeck.bat)
 index.html             web UI
 script.js
 style.css
+manifest.webmanifest   desktop-app manifest (installable window)
+sw.js                  service worker (app shell cache, never caches /api)
+icon-192.png           app icons
+icon-512.png
+icon-maskable-512.png
+adeck.ico              Windows shortcut / favicon icon
 
 firmware/ADeck/ADeck.ino   Arduino sketch
 
@@ -74,9 +82,13 @@ User data lives outside the repo:
 2. Close Arduino Serial Monitor and anything else using the COM port.
 3. Double-click **Setup ADeck.bat**.
 4. Wait for "ADeck is ready" with Web and Hardware status.
-5. Browser opens to the UI automatically.
+5. ADeck opens in its own app window, and you get an **ADeck** icon on the desktop and in the Start Menu.
 
 That's it. You don't need to know Python.
+
+Setup also registers the `adeck://` handler so the app can start the service on demand.
+To add ADeck as a browser-installed app too, use **INSTALL APP** on the System page (or your
+browser's "Install ADeck" menu item).
 
 Manual install if you prefer:
 
@@ -88,10 +100,26 @@ Setup creates `.venv`, installs deps, bundles Arduino CLI if needed, flashes fir
 
 ## Daily use
 
-- **Start ADeck.bat** — starts the backend if needed, opens the browser when ready
-- **ADeck-Control.bat** — everything else (check, repair, logs, stop)
+Open the **ADeck** icon (desktop or Start Menu). It starts the service if needed and opens the
+app window. After a good install, ADeck also starts with Windows.
 
-After a good install, ADeck also starts with Windows.
+Everything normal lives in the app's **System** page:
+
+| Section | What you can do |
+| --- | --- |
+| Status | service, hardware, COM port, firmware, sync, config, setup state |
+| Device | reconnect the board, pin a COM port, resync to device |
+| Service control | restart, stop, view log, open log folder |
+| Desktop app | install app window, create desktop icon, start with Windows |
+| Advanced | Check System, Show Errors, Install / Repair, Reinstall Firmware |
+
+Output from Check System / Repair / Firmware / Restart streams into the app, and keeps streaming
+while the service restarts.
+
+Fallbacks (still supported, no longer the normal path):
+
+- **Start ADeck.bat** — starts the backend if needed, opens the browser when ready
+- **ADeck-Control.bat** — the same maintenance from a terminal menu
 
 Control menu:
 
@@ -111,7 +139,14 @@ Save in the web UI updates local config and pushes the active profile to the TFT
 
 ## Troubleshooting
 
-First move: open **ADeck-Control.bat → Check System**. It tells you what's wrong and what to try next.
+First move: open ADeck → **System** page. The banner at the top names the problem and offers the
+matching action. **Check System** there prints the same report as the control menu.
+
+If the app window says "ADeck service is not running", use **START SERVICE** (uses `adeck://`), or
+open the ADeck desktop icon. The window itself loads from cache, so it can explain the state even
+while the service is down.
+
+Terminal fallback: **ADeck-Control.bat → Check System**.
 
 Quick checks:
 
@@ -205,7 +240,31 @@ Backend control:
 ```powershell
 .\.venv\Scripts\python.exe .\adeck_control.py start
 .\.venv\Scripts\python.exe .\adeck_control.py stop
+.\.venv\Scripts\python.exe .\adeck_control.py restart
 .\.venv\Scripts\python.exe .\adeck_control.py repair
+```
+
+Desktop app integration:
+
+```powershell
+.\.venv\Scripts\python.exe .\adeck_control.py app          # start service + app window
+.\.venv\Scripts\python.exe .\adeck_control.py shortcuts    # desktop + Start Menu icons
+.\.venv\Scripts\python.exe .\adeck_control.py autostart     # --disable to turn off
+.\.venv\Scripts\python.exe .\adeck_control.py protocol      # register adeck://
+.\.venv\Scripts\python.exe .\adeck_control.py integrate     # all of the above
+```
+
+API used by the System page (localhost, same-origin only):
+
+```text
+GET  /api/status          service + device state
+GET  /api/system          service, device, ports, config, environment, integration
+GET  /api/logs?source=app|stdout|stderr&lines=N
+GET  /api/tasks           recent maintenance tasks
+GET  /api/tasks/<id>      one task with live output
+POST /api/control         {"action": "reconnect|resync|open-logs|restart|stop|check|
+                            errors|repair|reinstall-firmware|autostart-on|autostart-off|
+                            create-shortcuts|remove-shortcuts|register-protocol"}
 ```
 
 Run tests:
@@ -227,6 +286,8 @@ Handy checklist if you're changing something big:
 
 - Delete `.venv`, `.tools`, `.build`, and the ADeck Startup shortcut
 - Run Setup ADeck.bat with hardware connected — every stage should pass
+- Confirm the ADeck desktop/Start Menu icon opens the app window (no browser tab)
+- Stop the service, reopen the app window — it must load and explain the state, not error out
 - Confirm `ADECK_PONG 2` after a required flash
 - Confirm `/api/status` is healthy with `connected: true`
 - Save a six-button profile, confirm TFT ACK
