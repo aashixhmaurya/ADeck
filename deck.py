@@ -1,6 +1,7 @@
 """Local HTTP/config/serial runtime for ADeck."""
 
 import argparse
+import ctypes
 import json
 import logging
 import mimetypes
@@ -8,6 +9,7 @@ import os
 import queue
 import re
 import secrets
+import shutil
 import signal
 import subprocess
 import sys
@@ -273,6 +275,98 @@ def config_frame(config, txid):
         )
     lines.append(f"CFG_END\t{txid}\t{crc16_ccitt_false(buttons):04X}")
     return ("\n".join(lines) + "\n").encode("ascii")
+
+
+_WIN_SHELL_META = re.compile(r"[&|><^]")
+_WIN_EXECUTABLE_SUFFIXES = {".exe", ".com", ".bat", ".cmd", ".msi", ".lnk"}
+
+
+def _allow_foreground_grant():
+    if os.name != "nt":
+        return
+    try:
+        ctypes.windll.user32.AllowSetForegroundWindow(0xFFFFFFFF)
+    except Exception:
+        pass
+
+
+def _needs_cmd_shell(command):
+    return bool(_WIN_SHELL_META.search(command))
+
+
+def _parse_win_command(command):
+    text = command.strip()
+    if not text:
+        return "", ""
+    expanded_full = os.path.expandvars(text)
+    if Path(expanded_full).exists():
+        return expanded_full, ""
+    if text[0] == '"':
+        end = text.find('"', 1)
+        if end != -1:
+            return text[1:end], text[end + 1 :].strip()
+    split_at = text.find(" ")
+    if split_at == -1:
+        return text, ""
+    return text[:split_at], text[split_at + 1 :].strip()
+
+
+def _resolve_win_executable(executable):
+    expanded = os.path.expandvars(executable.strip().strip('"'))
+    path = Path(expanded)
+    if path.exists():
+        return str(path.resolve())
+    resolved = shutil.which(expanded)
+    if not resolved:
+        return None
+    resolved_path = Path(resolved)
+    if resolved_path.suffix.lower() in _WIN_EXECUTABLE_SUFFIXES:
+        return str(resolved_path.resolve())
+    return None
+
+
+def _is_win_executable_file(path):
+    return path.suffix.lower() in _WIN_EXECUTABLE_SUFFIXES
+
+
+def _shell_execute_win(file_path, params=""):
+    _allow_foreground_grant()
+    result = ctypes.windll.shell32.ShellExecuteW(
+        None, "open", file_path, params or None, None, 1
+    )
+    if result <= 32:
+        raise OSError(f"ShellExecute failed ({result})")
+
+
+def _launch_win_command(command):
+    _allow_foreground_grant()
+    text = command.strip()
+    plain = os.path.expandvars(text)
+
+    if re.fullmatch(r"https?://\S+", text, re.IGNORECASE):
+        os.startfile(text)
+        return
+
+    if _needs_cmd_shell(text):
+        subprocess.Popen(text, shell=True)
+        return
+
+    executable, params = _parse_win_command(plain)
+    resolved = _resolve_win_executable(executable)
+    if resolved:
+        path = Path(resolved)
+        if params or not _is_win_executable_file(path):
+            _shell_execute_win(resolved, params)
+        else:
+            subprocess.Popen(["explorer.exe", resolved])
+        return
+
+    full_path = Path(plain.strip('"'))
+    if full_path.exists():
+        os.startfile(str(full_path))
+        return
+
+    subprocess.Popen(text, shell=True)
 
 
 class ConfigStore:
@@ -600,11 +694,8 @@ class ADeckDevice:
         if not command:
             return
         try:
-            plain_path = os.path.expandvars(command.strip().strip('"'))
-            if os.name == "nt" and Path(plain_path).exists():
-                os.startfile(plain_path)
-            elif os.name == "nt" and re.fullmatch(r"https?://\S+", command, re.IGNORECASE):
-                os.startfile(command)
+            if os.name == "nt":
+                _launch_win_command(command)
             else:
                 subprocess.Popen(command, shell=True)
         except Exception as error:
