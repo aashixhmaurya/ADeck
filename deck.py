@@ -1240,6 +1240,7 @@ def list_installed_apps():
 
 
 _ICON_SIZE = 32
+_TFT_ICON_SIZE = 32
 _ICON_EXTRACT_LOCK = threading.Lock()
 _ICON_APIS_READY = False
 _ICON_FILE_SUFFIXES = {".dll", ".exe", ".ico", ".lnk"}
@@ -1385,7 +1386,7 @@ def _placeholder_icon_png(size=_ICON_SIZE):
     return _png_from_rgba(size, size, bytes(row))
 
 
-def _hicon_to_png(hicon, size=_ICON_SIZE):
+def _hicon_to_rgba(hicon, size=_ICON_SIZE):
     if not hicon:
         return b""
     _ensure_icon_apis()
@@ -1406,7 +1407,7 @@ def _hicon_to_png(hicon, size=_ICON_SIZE):
     hbm = gdi32.CreateDIBSection(
         memdc, ctypes.byref(bmi), _DIB_RGB_COLORS, ctypes.byref(bits_ptr), None, 0
     )
-    png = b""
+    rgba = b""
     if hbm and bits_ptr.value:
         old = gdi32.SelectObject(memdc, hbm)
         ctypes.memset(bits_ptr.value, 0, size * size * 4)
@@ -1422,12 +1423,17 @@ def _hicon_to_png(hicon, size=_ICON_SIZE):
         if opaque:
             for index in range(3, len(pixels), 4):
                 pixels[index] = 255
-        png = _png_from_rgba(size, size, bytes(pixels))
+        rgba = bytes(pixels)
         gdi32.DeleteObject(hbm)
     if memdc:
         gdi32.DeleteDC(memdc)
     user32.ReleaseDC(None, hdc)
-    return png
+    return rgba
+
+
+def _hicon_to_png(hicon, size=_ICON_SIZE):
+    rgba = _hicon_to_rgba(hicon, size)
+    return _png_from_rgba(size, size, rgba) if rgba else b""
 
 
 def _hicon_from_path(path, index=0):
@@ -1524,6 +1530,98 @@ def app_icon_png(command, cache_dir=None):
     except OSError:
         pass
     return png
+
+
+def _hex_rgb_tuple(value):
+    text = str(value or "").strip()
+    if len(text) == 7 and text[0] == "#":
+        try:
+            return (int(text[1:3], 16), int(text[3:5], 16), int(text[5:7], 16))
+        except ValueError:
+            pass
+    return (0, 0, 0)
+
+
+def _extract_icon_rgba(source, size=_TFT_ICON_SIZE):
+    if not source:
+        return b""
+    with _ICON_EXTRACT_LOCK:
+        hicon = None
+        try:
+            hicon = _hicon_from_path(source)
+            return _hicon_to_rgba(hicon, size) if hicon else b""
+        except Exception as error:
+            LOGGER.debug("TFT icon extract failed for %s: %s", source, error)
+            return b""
+        finally:
+            if hicon:
+                try:
+                    ctypes.windll.user32.DestroyIcon(hicon)
+                except Exception:
+                    pass
+
+
+def _rgba_to_rgb565(rgba, width, height, background=(0, 0, 0)):
+    expected = width * height * 4
+    if not rgba or len(rgba) < expected:
+        return b""
+    br, bg, bb = background
+    out = bytearray(width * height * 2)
+    for pixel in range(width * height):
+        offset = pixel * 4
+        alpha = rgba[offset + 3] / 255.0
+        red = int(rgba[offset] * alpha + br * (1.0 - alpha))
+        green = int(rgba[offset + 1] * alpha + bg * (1.0 - alpha))
+        blue = int(rgba[offset + 2] * alpha + bb * (1.0 - alpha))
+        packed = ((red & 0xF8) << 8) | ((green & 0xFC) << 3) | (blue >> 3)
+        out[pixel * 2] = (packed >> 8) & 0xFF
+        out[pixel * 2 + 1] = packed & 0xFF
+    return bytes(out)
+
+
+def app_icon_rgb565(command, background="#000000"):
+    if str(command or "").strip() == "" or os.name != "nt":
+        return b""
+    source = _icon_source_for_command(command)
+    if not source:
+        return b""
+    rgba = _extract_icon_rgba(source, _TFT_ICON_SIZE)
+    if len(rgba) != _TFT_ICON_SIZE * _TFT_ICON_SIZE * 4:
+        return b""
+    return _rgba_to_rgb565(
+        rgba, _TFT_ICON_SIZE, _TFT_ICON_SIZE, _hex_rgb_tuple(background)
+    )
+
+
+def slot_icon_frame(index, button, txid):
+    if not isinstance(button, dict):
+        return b""
+    if str(button.get("kind") or "").strip().lower() != "app":
+        return b""
+    command = str(button.get("command") or "").strip()
+    if not command:
+        return b""
+    pixels = app_icon_rgb565(command, button.get("color") or "#000000")
+    row_bytes = _TFT_ICON_SIZE * 2
+    if len(pixels) != _TFT_ICON_SIZE * row_bytes:
+        return b""
+    lines = [f"CFG_ICON_BEGIN\t{txid}\t{index}\t{_TFT_ICON_SIZE}"]
+    for row in range(_TFT_ICON_SIZE):
+        chunk = pixels[row * row_bytes : (row + 1) * row_bytes]
+        lines.append(
+            f"CFG_ICON_ROW\t{txid}\t{index}\t{row}\t{chunk.hex().upper()}"
+        )
+    lines.append(f"CFG_ICON_END\t{txid}\t{index}")
+    return ("\n".join(lines) + "\n").encode("ascii")
+
+
+def app_icon_frames(buttons, txid):
+    frames = []
+    for index, button in enumerate(buttons or []):
+        frame = slot_icon_frame(index, button, txid)
+        if frame:
+            frames.append((index, frame))
+    return frames
 
 
 class ConfigStore:
@@ -1636,6 +1734,7 @@ class ADeckDevice:
         self._connection = None
         self._port = None
         self._firmware = None
+        self._tft_icons = False
         self._last_error = ""
         self._last_sync = None
         self._last_txid = None
@@ -1738,6 +1837,7 @@ class ADeckDevice:
             self._connection = None
             self._port = None
             self._firmware = None
+            self._tft_icons = False
             self._last_sync = None
             self._last_error = "Reconnecting"
         if connection is not None:
@@ -1748,7 +1848,7 @@ class ADeckDevice:
         self._resync.set()
         LOGGER.info("Reconnect requested (port=%s)", self.requested_port or "auto")
 
-    def request_sync(self, config, timeout=5):
+    def request_sync(self, config, timeout=12):
         with self._state_lock:
             if self._connection is None:
                 self._resync.set()
@@ -1832,9 +1932,22 @@ class ADeckDevice:
             while time.monotonic() < deadline and not self._stop.is_set():
                 line = connection.readline().decode("ascii", errors="ignore").strip()
                 if line == f"ADECK_PONG\t{PROTOCOL_VERSION}":
+                    self._tft_icons = False
+                    caps_deadline = time.monotonic() + 0.3
+                    while time.monotonic() < caps_deadline and not self._stop.is_set():
+                        extra = connection.readline().decode(
+                            "ascii", errors="ignore"
+                        ).strip()
+                        if extra == "ADECK_CAPS\tICON":
+                            self._tft_icons = True
+                            break
+                        if extra.startswith("PRESS\t"):
+                            self._handle_line(extra)
                     return connection
                 if line.startswith("PRESS\t"):
                     self._handle_line(line)
+                if line == "ADECK_CAPS\tICON":
+                    self._tft_icons = True
         except Exception:
             connection.close()
             raise
@@ -1892,6 +2005,7 @@ class ADeckDevice:
             self._connection = None
             self._port = None
             self._firmware = None
+            self._tft_icons = False
             self._last_sync = False
             if error:
                 self._last_error = error
@@ -1939,6 +2053,9 @@ class ADeckDevice:
                 threading.Thread(
                     target=self._run_command, args=(index,), name=f"adeck-key-{index}", daemon=True
                 ).start()
+        elif line == "ADECK_CAPS\tICON":
+            with self._state_lock:
+                self._tft_icons = True
         elif line == f"ADECK_READY\t{PROTOCOL_VERSION}":
             self._resync.set()
 
@@ -1950,7 +2067,7 @@ class ADeckDevice:
             raise OSError("ADeck is offline")
         connection.write(frame)
         connection.flush()
-        deadline = time.monotonic() + 3
+        deadline = time.monotonic() + 5
         while time.monotonic() < deadline and not self._stop.is_set():
             line = connection.readline().decode("ascii", errors="ignore").strip()
             if line == f"CFG_OK\t{txid}":
@@ -1959,6 +2076,7 @@ class ADeckDevice:
                     self._last_txid = txid
                     self._last_error = ""
                 LOGGER.info("Synchronized transaction %s", txid)
+                self._push_app_icons(connection, active_buttons(config), txid)
                 return
             if line.startswith(f"CFG_ERR\t{txid}\t"):
                 reason = line.split("\t", 2)[2]
@@ -1970,6 +2088,49 @@ class ADeckDevice:
             if line:
                 self._handle_line(line)
         raise TimeoutError("ADeck did not acknowledge the configuration")
+
+    def _push_app_icons(self, connection, buttons, txid):
+        with self._state_lock:
+            capable = self._tft_icons
+        if connection is None or not capable:
+            return
+        try:
+            frames = app_icon_frames(buttons, txid)
+        except Exception as error:
+            LOGGER.debug("TFT app icons skipped: %s", error)
+            return
+        accepted = 0
+        for index, frame in frames:
+            try:
+                for line in frame.split(b"\n"):
+                    if not line:
+                        continue
+                    connection.write(line + b"\n")
+                    connection.flush()
+                    time.sleep(0.004)
+                expected = f"CFG_ICON_OK\t{txid}\t{index}"
+                deadline = time.monotonic() + 1.2
+                while time.monotonic() < deadline and not self._stop.is_set():
+                    reply = connection.readline().decode("ascii", errors="ignore").strip()
+                    if reply == expected:
+                        accepted += 1
+                        LOGGER.info("TFT icon accepted for key %s", index + 1)
+                        break
+                    if reply.startswith("PRESS\t") or reply == "ADECK_CAPS\tICON":
+                        self._handle_line(reply)
+                    elif reply.startswith("CFG_ERR\t"):
+                        LOGGER.debug("TFT icon rejected for key %s: %s", index + 1, reply)
+                        break
+            except Exception as error:
+                LOGGER.debug("TFT app icon write failed: %s", error)
+                return
+        if frames:
+            LOGGER.info(
+                "Pushed %s/%s TFT app icon(s) for transaction %s",
+                accepted,
+                len(frames),
+                txid,
+            )
 
     def _complete_request(self, request):
         try:

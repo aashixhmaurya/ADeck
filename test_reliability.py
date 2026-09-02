@@ -49,8 +49,19 @@ class FakeSerial:
 
     def write(self, payload):
         self.writes.append(payload)
-        txid = payload.split(b"\n", 1)[0].decode("ascii").split("\t")[1]
-        self.replies.append(f"CFG_OK\t{txid}\n".encode("ascii"))
+        try:
+            first = payload.split(b"\n", 1)[0].decode("ascii")
+        except UnicodeDecodeError:
+            return
+        parts = first.split("\t")
+        if not parts:
+            return
+        if parts[0] == "CFG_BEGIN" and len(parts) > 1:
+            self.replies.append(f"CFG_OK\t{parts[1]}\n".encode("ascii"))
+        elif parts[0] == "CFG_ICON_END" and len(parts) > 2:
+            self.replies.append(
+                f"CFG_ICON_OK\t{parts[1]}\t{parts[2]}\n".encode("ascii")
+            )
 
     def flush(self):
         pass
@@ -675,6 +686,81 @@ class ReliabilityTests(unittest.TestCase):
                 server.shutdown()
                 server.server_close()
                 thread.join(timeout=2)
+
+    def test_installed_app_icons_feed_existing_tft_pipeline(self):
+        config = sample_config()
+        config["profiles"][0]["buttons"][0]["kind"] = "app"
+        config["profiles"][0]["buttons"][0]["command"] = "notepad.exe"
+        config["profiles"][0]["buttons"][1]["kind"] = "command"
+        config["profiles"][0]["buttons"][1]["command"] = "git status"
+        normalized = deck.normalize_config(config)
+        frame = deck.config_frame(normalized, "abc123")
+        self.assertIn(b"CFG_SLOT\tabc123\t0\t#112233\tONE\n", frame)
+        self.assertNotIn(b"CFG_ICON", frame)
+
+        self.assertEqual(deck.slot_icon_frame(1, normalized["profiles"][0]["buttons"][1], "abc123"), b"")
+        self.assertEqual(
+            deck.slot_icon_frame(2, normalized["profiles"][0]["buttons"][2], "abc123"),
+            b"",
+        )
+        self.assertEqual(
+            deck.app_icon_frames(
+                [{"kind": "command", "command": "git status", "color": "#000000"}],
+                "abc123",
+            ),
+            [],
+        )
+        self.assertEqual(
+            deck.app_icon_frames(
+                [{"kind": "app", "command": "", "color": "#000000"}],
+                "abc123",
+            ),
+            [],
+        )
+        self.assertEqual(deck.app_icon_rgb565("___no_such_app___"), b"")
+        self.assertEqual(
+            deck.slot_icon_frame(
+                0,
+                {"kind": "command", "command": "git status", "color": "#112233"},
+                "abc123",
+            ),
+            b"",
+        )
+
+        pixels = deck.app_icon_rgb565("notepad.exe", "#112233")
+        self.assertEqual(len(pixels), 32 * 32 * 2)
+        self.assertTrue(any(pixels))
+        icon_frame = deck.slot_icon_frame(0, normalized["profiles"][0]["buttons"][0], "abc123")
+        self.assertTrue(icon_frame.startswith(b"CFG_ICON_BEGIN\tabc123\t0\t32\n"))
+        self.assertIn(b"CFG_ICON_ROW\tabc123\t0\t0\t", icon_frame)
+        self.assertTrue(icon_frame.endswith(b"CFG_ICON_END\tabc123\t0\n"))
+        self.assertEqual(icon_frame.count(b"CFG_ICON_ROW"), 32)
+
+        store = mock.Mock()
+        device = deck.ADeckDevice(store, identity_path=Path(tempfile.gettempdir()) / "unused-icon.json")
+        connection = FakeSerial()
+        device._connection = connection
+        device._tft_icons = True
+        device._sync(normalized, "abc123")
+        self.assertEqual(connection.writes[0], frame)
+        joined = b"".join(connection.writes)
+        self.assertIn(b"CFG_ICON_BEGIN\tabc123\t0\t32\n", joined)
+        self.assertNotIn(b"CFG_ICON_BEGIN\tabc123\t1\t", joined)
+        self.assertTrue(device.status()["last_sync"])
+
+        device_off = deck.ADeckDevice(store, identity_path=Path(tempfile.gettempdir()) / "unused-icon-off.json")
+        connection_off = FakeSerial()
+        device_off._connection = connection_off
+        device_off._tft_icons = False
+        device_off._sync(normalized, "abc123")
+        self.assertEqual(connection_off.writes, [frame])
+
+        firmware = (deck.BASE_DIR / "firmware" / "ADeck" / "ADeck.ino").read_text(encoding="utf-8")
+        self.assertIn("CFG_ICON_BEGIN", firmware)
+        self.assertIn("CFG_ICON_OK", firmware)
+        self.assertIn("ADECK_CAPS\\tICON", firmware)
+        self.assertIn("draw16bitRGBBitmap", firmware)
+        self.assertIn("slotHasIcon", firmware)
 
 
 if __name__ == "__main__":
