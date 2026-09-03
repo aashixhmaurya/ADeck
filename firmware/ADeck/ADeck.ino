@@ -22,6 +22,8 @@ const uint8_t TOTAL_APPS = 6;
 const uint8_t LABEL_SIZE = 11;
 const uint8_t APP_W = 90;
 const uint8_t APP_H = 90;
+const uint8_t ICON_SIZE = 32;
+const uint16_t SERIAL_LINE_MAX = 180;
 const uint16_t RECORD_SLOT_0 = 0;
 const unsigned long CONFIG_TIMEOUT_MS = 5000;
 const unsigned long PRESS_VIEW_MS = 250;
@@ -62,6 +64,11 @@ uint32_t stagedRgb[TOTAL_APPS];
 uint8_t stagedSlots = 0;
 uint32_t activeGeneration = 0;
 int8_t activeRecord = -1;
+uint16_t slotIcons[TOTAL_APPS][ICON_SIZE * ICON_SIZE];
+bool slotHasIcon[TOTAL_APPS];
+String lastSyncId;
+int8_t iconRecvIndex = -1;
+uint32_t iconRecvMask = 0;
 
 String serialLine;
 String transactionId;
@@ -269,6 +276,20 @@ void renderIcon(uint8_t index) {
   gfx->fillRect(slotX[index] + 2, slotY[index] + 2, APP_W - 4, APP_H - 4, slot.color);
 
   const String label = slot.label[0] ? String(slot.label) : String("EMPTY");
+  if (slotHasIcon[index]) {
+    const int iconX = slotX[index] + (APP_W - ICON_SIZE) / 2;
+    const int iconY = slotY[index] + 8;
+    gfx->draw16bitRGBBitmap(iconX, iconY, slotIcons[index], ICON_SIZE, ICON_SIZE);
+    const int textWidth = label.length() * 6;
+    const int textX = slotX[index] + max(4, (APP_W - textWidth) / 2);
+    const int textY = slotY[index] + APP_H - 14;
+    gfx->setTextColor(textColorFor(slot.color));
+    gfx->setTextSize(1);
+    gfx->setCursor(textX, textY);
+    gfx->print(label);
+    return;
+  }
+
   const uint8_t textSize = label.length() > 7 ? 1 : 2;
   const int textWidth = label.length() * 6 * textSize;
   const int textX = slotX[index] + max(4, (APP_W - textWidth) / 2);
@@ -514,16 +535,99 @@ void endConfig(const String &line) {
 
   config = stagedConfig;
   pressedVisible = false;
+  memset(slotHasIcon, 0, sizeof(slotHasIcon));
+  iconRecvIndex = -1;
+  iconRecvMask = 0;
+  lastSyncId = id;
   loadHomeScreen();
   Serial.print("CFG_OK\t");
   Serial.println(id);
   clearTransaction();
 }
 
+void beginIcon(const String &line) {
+  if (receivingConfig) return;
+  const int firstTab = line.indexOf('\t');
+  const int secondTab = line.indexOf('\t', firstTab + 1);
+  const int thirdTab = line.indexOf('\t', secondTab + 1);
+  if (firstTab < 0 || secondTab < 0 || thirdTab < 0) return;
+  if (line.indexOf('\t', thirdTab + 1) >= 0) return;
+  const String id = line.substring(firstTab + 1, secondTab);
+  if (id != lastSyncId) return;
+  const String indexText = line.substring(secondTab + 1, thirdTab);
+  if (
+    indexText.length() != 1 ||
+    indexText.charAt(0) < '0' ||
+    indexText.charAt(0) >= '0' + TOTAL_APPS
+  ) {
+    return;
+  }
+  if (line.substring(thirdTab + 1).toInt() != ICON_SIZE) return;
+  iconRecvIndex = indexText.charAt(0) - '0';
+  iconRecvMask = 0;
+  slotHasIcon[iconRecvIndex] = false;
+}
+
+void receiveIconRow(const String &line) {
+  if (receivingConfig || iconRecvIndex < 0) return;
+  const int firstTab = line.indexOf('\t');
+  const int secondTab = line.indexOf('\t', firstTab + 1);
+  const int thirdTab = line.indexOf('\t', secondTab + 1);
+  const int fourthTab = line.indexOf('\t', thirdTab + 1);
+  if (firstTab < 0 || secondTab < 0 || thirdTab < 0 || fourthTab < 0) return;
+  const String id = line.substring(firstTab + 1, secondTab);
+  if (id != lastSyncId) return;
+  const String indexText = line.substring(secondTab + 1, thirdTab);
+  if (indexText.length() != 1 || (indexText.charAt(0) - '0') != iconRecvIndex) return;
+  const int row = line.substring(thirdTab + 1, fourthTab).toInt();
+  if (row < 0 || row >= ICON_SIZE) return;
+  const String hex = line.substring(fourthTab + 1);
+  if (hex.length() != ICON_SIZE * 4) return;
+  uint16_t *dest = &slotIcons[iconRecvIndex][row * ICON_SIZE];
+  for (uint8_t x = 0; x < ICON_SIZE; x++) {
+    uint16_t pixel = 0;
+    for (uint8_t nibble = 0; nibble < 4; nibble++) {
+      const int8_t value = hexValue(hex.charAt(x * 4 + nibble));
+      if (value < 0) return;
+      pixel = static_cast<uint16_t>((pixel << 4) | value);
+    }
+    dest[x] = pixel;
+  }
+  iconRecvMask |= (1UL << row);
+}
+
+void endIcon(const String &line) {
+  if (receivingConfig || iconRecvIndex < 0) return;
+  const int firstTab = line.indexOf('\t');
+  const int secondTab = line.indexOf('\t', firstTab + 1);
+  if (firstTab < 0 || secondTab < 0 || line.indexOf('\t', secondTab + 1) >= 0) return;
+  const String id = line.substring(firstTab + 1, secondTab);
+  if (id != lastSyncId) return;
+  const String indexText = line.substring(secondTab + 1);
+  if (indexText.length() != 1 || (indexText.charAt(0) - '0') != iconRecvIndex) return;
+  if (iconRecvMask != 0xFFFFFFFFUL) {
+    iconRecvIndex = -1;
+    iconRecvMask = 0;
+    return;
+  }
+  slotHasIcon[iconRecvIndex] = true;
+  const uint8_t index = static_cast<uint8_t>(iconRecvIndex);
+  iconRecvIndex = -1;
+  iconRecvMask = 0;
+  Serial.print("CFG_ICON_OK\t");
+  Serial.print(id);
+  Serial.print('\t');
+  Serial.println(index);
+  if (displayReady && !pressedVisible) {
+    renderIcon(index);
+  }
+}
+
 void handleSerialLine(const String &line) {
   if (line == "PING") {
     Serial.print("ADECK_PONG\t");
     Serial.println(PROTOCOL_VERSION);
+    Serial.println("ADECK_CAPS\tICON");
     return;
   }
   if (line.startsWith("CFG_BEGIN\t")) {
@@ -536,6 +640,18 @@ void handleSerialLine(const String &line) {
   }
   if (line.startsWith("CFG_END\t")) {
     endConfig(line);
+    return;
+  }
+  if (line.startsWith("CFG_ICON_BEGIN\t")) {
+    beginIcon(line);
+    return;
+  }
+  if (line.startsWith("CFG_ICON_ROW\t")) {
+    receiveIconRow(line);
+    return;
+  }
+  if (line.startsWith("CFG_ICON_END\t")) {
+    endIcon(line);
   }
 }
 
@@ -544,14 +660,16 @@ void readSerial() {
     const char value = static_cast<char>(Serial.read());
     if (value == '\n') {
       if (serialOverflow) {
-        failTransaction(transactionId, "LINE_TOO_LONG");
+        if (receivingConfig) {
+          failTransaction(transactionId, "LINE_TOO_LONG");
+        }
       } else if (serialLine.length()) {
         handleSerialLine(serialLine);
       }
       serialLine = "";
       serialOverflow = false;
     } else if (value != '\r') {
-      if (serialLine.length() < 95) {
+      if (serialLine.length() < SERIAL_LINE_MAX) {
         serialLine += value;
       } else {
         serialOverflow = true;
@@ -603,7 +721,7 @@ void readTouch(unsigned long now) {
 
 void setup() {
   Serial.begin(115200);
-  serialLine.reserve(96);
+  serialLine.reserve(SERIAL_LINE_MAX + 1);
   transactionId.reserve(16);
 
   displayReady = gfx->begin();
@@ -616,6 +734,7 @@ void setup() {
   loadHomeScreen();
   nextPressAllowed = millis() + 1200;
 
+  Serial.println("ADECK_CAPS\tICON");
   Serial.print("ADECK_READY\t");
   Serial.println(PROTOCOL_VERSION);
 }
