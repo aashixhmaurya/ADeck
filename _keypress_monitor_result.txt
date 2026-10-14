@@ -1,0 +1,14 @@
+=== ADeck physical key monitor ACTIVE (retry) ===
+Press physical ADeck key 1 (Calculator) exactly once now.
+Backend connected: True port=COM5 sync=True
+Active profile: Test | key1 command: calc.exe
+Baseline calculator PIDs: none (closed any prior Calculator)
+Baseline foreground: brave (3860)
+Monitoring for up to 180 seconds...
+No new calculator process detected during monitoring window.
+--- new adeck.log lines during window ---
+(none)
+PRESS event logged: False
+Command dispatch logged: False
+Command error logged: False
+RESULT: No evidence that press reached backend.

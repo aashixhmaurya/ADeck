@@ -42,26 +42,55 @@ def sample_config(active="Main"):
 
 
 class FakeSerial:
-    def __init__(self):
+    """Stands in for the board, including its habit of losing icon rows.
+
+    rows_to_drop counts how many icon frames are swallowed whole (no
+    CFG_ICON_OK, and the board says CFG_ICON_ERR the way the real firmware
+    does), so retries can be exercised without hardware.
+
+    theme_errors makes the board refuse a theme transaction for the given
+    number of frames, the way the firmware answers CFG_THEME_ERR.
+    """
+
+    def __init__(self, rows_to_drop=0, theme_errors=0):
         self.writes = []
         self.replies = []
         self.closed = False
+        self.frames_to_drop = rows_to_drop
+        self.icon_frames = 0
+        self.theme_errors = theme_errors
+        self.theme_frames = 0
 
     def write(self, payload):
         self.writes.append(payload)
         try:
-            first = payload.split(b"\n", 1)[0].decode("ascii")
+            lines = payload.decode("ascii").splitlines()
         except UnicodeDecodeError:
             return
-        parts = first.split("\t")
-        if not parts:
-            return
-        if parts[0] == "CFG_BEGIN" and len(parts) > 1:
-            self.replies.append(f"CFG_OK\t{parts[1]}\n".encode("ascii"))
-        elif parts[0] == "CFG_ICON_END" and len(parts) > 2:
-            self.replies.append(
-                f"CFG_ICON_OK\t{parts[1]}\t{parts[2]}\n".encode("ascii")
-            )
+        for line in lines:
+            parts = line.split("\t")
+            if not parts:
+                continue
+            if parts[0] == "CFG_BEGIN" and len(parts) > 1:
+                self.replies.append(f"CFG_OK\t{parts[1]}\n".encode("ascii"))
+            elif parts[0] == "CFG_THEME_END" and len(parts) > 1:
+                self.theme_frames += 1
+                if self.theme_frames <= self.theme_errors:
+                    self.replies.append(
+                        f"CFG_THEME_ERR\t{parts[1]}\tCRC_MISMATCH\n".encode("ascii")
+                    )
+                else:
+                    self.replies.append(f"CFG_THEME_OK\t{parts[1]}\n".encode("ascii"))
+            elif parts[0] == "CFG_ICON_END" and len(parts) > 2:
+                self.icon_frames += 1
+                if self.icon_frames <= self.frames_to_drop:
+                    self.replies.append(
+                        f"CFG_ICON_ERR\t{parts[1]}\t{parts[2]}\tINCOMPLETE\n".encode("ascii")
+                    )
+                else:
+                    self.replies.append(
+                        f"CFG_ICON_OK\t{parts[1]}\t{parts[2]}\n".encode("ascii")
+                    )
 
     def flush(self):
         pass
@@ -755,12 +784,358 @@ class ReliabilityTests(unittest.TestCase):
         device_off._sync(normalized, "abc123")
         self.assertEqual(connection_off.writes, [frame])
 
+    def _icon_device(self, name):
+        store = mock.Mock()
+        device = deck.ADeckDevice(
+            store, identity_path=Path(tempfile.gettempdir()) / name
+        )
+        return device
+
+    def _app_config(self):
+        config = sample_config()
+        config["profiles"][0]["buttons"][0]["kind"] = "app"
+        config["profiles"][0]["buttons"][0]["command"] = "notepad.exe"
+        return deck.normalize_config(config)
+
+    def test_dropped_tft_icon_is_retried_until_the_board_takes_it(self):
+        normalized = self._app_config()
+        device = self._icon_device("retry-icon.json")
+        # the board loses the first two attempts at the same icon
+        connection = FakeSerial(rows_to_drop=2)
+        device._connection = connection
+        device._tft_icons = True
+
+        device._sync(normalized, "abc123")
+
+        self.assertEqual(connection.icon_frames, 3)
+        self.assertTrue(device.status()["last_sync"])
+
+    def test_tft_icon_that_never_lands_is_reported(self):
+        normalized = self._app_config()
+        device = self._icon_device("missing-icon.json")
+        connection = FakeSerial(rows_to_drop=deck._ICON_ATTEMPTS)
+        device._connection = connection
+        device._tft_icons = True
+
+        with self.assertLogs("adeck", level="WARNING") as captured:
+            device._sync(normalized, "abc123")
+
+        self.assertEqual(connection.icon_frames, deck._ICON_ATTEMPTS)
+        self.assertTrue(
+            any("never accepted for key(s) 1" in line for line in captured.output),
+            captured.output,
+        )
+
         firmware = (deck.BASE_DIR / "firmware" / "ADeck" / "ADeck.ino").read_text(encoding="utf-8")
         self.assertIn("CFG_ICON_BEGIN", firmware)
         self.assertIn("CFG_ICON_OK", firmware)
         self.assertIn("ADECK_CAPS\\tICON", firmware)
         self.assertIn("draw16bitRGBBitmap", firmware)
         self.assertIn("slotHasIcon", firmware)
+
+    # --- themes ----------------------------------------------------------
+
+    def test_the_four_built_in_themes_are_complete_and_stable(self):
+        payload = deck.theme_payload()
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["default"], "adeck-classic")
+        self.assertEqual(
+            payload["order"], ["adeck-classic", "cyber", "terminal", "retro"]
+        )
+        self.assertEqual(
+            [theme["id"] for theme in payload["themes"]], payload["order"]
+        )
+        self.assertEqual(
+            list(payload["tftKeys"]),
+            [
+                "background",
+                "text",
+                "textMuted",
+                "accent",
+                "accentSecondary",
+                "selected",
+                "pressed",
+            ],
+        )
+
+        token_sets = set()
+        for theme in payload["themes"]:
+            self.assertTrue(theme["name"])
+            self.assertTrue(theme["short"])
+            self.assertTrue(theme["description"])
+            for mode in ("light", "dark"):
+                palette = theme["web"][mode]
+                token_sets.add(frozenset(palette))
+                for token, value in palette.items():
+                    self.assertTrue(token.startswith("--"), (theme["id"], token))
+                    self.assertRegex(value, r"^#[0-9a-fA-F]{6}$")
+            panel = theme["tft"]
+            self.assertEqual(set(panel), set(payload["tftKeys"]))
+            for value in panel.values():
+                self.assertRegex(value, r"^#[0-9a-fA-F]{6}$")
+        # one shape for every theme, so the picker never has to guess at a token
+        self.assertEqual(len(token_sets), 1, token_sets)
+
+    def test_classic_theme_matches_the_shipped_stylesheet(self):
+        """The default theme and the shipped stylesheet must agree on tokens.
+
+        The stylesheet keeps the original classic look - it is only what paints
+        before the live theme vars land - so the two no longer share values. A
+        token one side reads and the other never defines is still a bug though.
+        """
+        style = (deck.WEB_DIR / "style.css").read_text(encoding="utf-8")
+
+        def block(selector):
+            start = style.index(selector)
+            body = style[style.index("{", start) + 1 : style.index("}", start)]
+            found = {}
+            for line in body.splitlines():
+                line = line.strip()
+                if not line.startswith("--") or ":" not in line:
+                    continue
+                name, value = line.split(":", 1)
+                found[name.strip()] = value.strip().rstrip(";").strip()
+            return found
+
+        classic = deck.THEMES["adeck-classic"]["web"]
+        blocks = {
+            "light": block('[data-theme="light"] {'),
+            "dark": block('[data-theme="dark"] {'),
+        }
+        # five of the tokens are only ever read by dark-scoped rules, so a light
+        # palette holding them is expected - they just have to exist somewhere
+        known = set(blocks["light"]) | set(blocks["dark"])
+        for mode, shipped in blocks.items():
+            colours = {t for t, v in shipped.items() if v.startswith("#")}
+            self.assertTrue(colours, mode)
+            # no colour the stylesheet paints with may be missing from the theme
+            self.assertEqual(colours - set(classic[mode]), set(), mode)
+            # and nothing sits in the palette that the stylesheet never reads
+            self.assertEqual(set(classic[mode]) - known, set(), mode)
+
+    def test_workspace_theme_falls_back_safely(self):
+        config = sample_config()
+        normalized = deck.normalize_config(config)
+        # an old workspace has no theme of its own and picks up the default
+        self.assertEqual(normalized["profiles"][0]["theme"], "adeck-classic")
+
+        config["profiles"][0]["theme"] = "cyber"
+        self.assertEqual(deck.normalize_config(config)["profiles"][0]["theme"], "cyber")
+
+        # mixed case, padding and rubbish all land somewhere valid
+        for raw, expected in (
+            ("  CYBER ", "cyber"),
+            ("terminal", "terminal"),
+            ("retro", "retro"),
+            ("neon-dreams", "adeck-classic"),
+            ("", "adeck-classic"),
+            (7, "adeck-classic"),
+            (None, "adeck-classic"),
+        ):
+            config["profiles"][0]["theme"] = raw
+            self.assertEqual(
+                deck.normalize_config(config)["profiles"][0]["theme"], expected, raw
+            )
+
+        self.assertEqual(deck.theme_for("nope")["id"], "adeck-classic")
+        self.assertEqual(deck.theme_for(None)["id"], "adeck-classic")
+
+    def test_active_theme_follows_the_active_workspace(self):
+        config = sample_config()
+        buttons = [
+            {"key": i + 1, "label": f"K{i}", "command": f"c{i}", "color": "#112233"}
+            for i in range(6)
+        ]
+        config["profiles"] = [
+            {"id": "a", "name": "Main", "theme": "cyber", "buttons": buttons},
+            {"id": "b", "name": "Work", "theme": "terminal", "buttons": buttons},
+        ]
+        config["active_profile"] = "Main"
+        normalized = deck.normalize_config(config)
+        self.assertEqual(deck.active_theme_id(normalized), "cyber")
+        normalized["active_profile"] = "Work"
+        self.assertEqual(deck.active_theme_id(normalized), "terminal")
+        # a config that cannot be read at all still answers with the default
+        self.assertEqual(deck.active_theme_id(None), "adeck-classic")
+        self.assertEqual(deck.active_theme_id({"profiles": []}), "adeck-classic")
+
+    def test_theme_frame_shape_and_crc(self):
+        frame = deck.theme_frame("cyber", "abc123").decode("ascii")
+        lines = frame.splitlines()
+        self.assertEqual(lines[0], "CFG_THEME_BEGIN\tabc123\t7")
+        self.assertEqual(lines[-1][: len("CFG_THEME_END\tabc123\t")], "CFG_THEME_END\tabc123\t")
+        self.assertTrue(frame.endswith("\n"))
+
+        panel = deck.THEMES["cyber"]["tft"]
+        for index, key in enumerate(deck.TFT_THEME_KEYS):
+            self.assertIn(
+                f"CFG_THEME_VALUE\tabc123\t{index}\t{panel[key].upper()}", lines
+            )
+        self.assertEqual(len(lines), 9)
+
+        # the crc is over the same RGB triples in the same order the board sees
+        values = deck.theme_values("cyber")
+        self.assertEqual(values, [deck._hex_rgb_tuple(panel[key]) for key in deck.TFT_THEME_KEYS])
+        expected = f"{deck.theme_crc(values):04X}"
+        self.assertEqual(lines[-1], f"CFG_THEME_END\tabc123\t{expected}")
+
+        # a different theme is a different frame, not the same one relabelled
+        self.assertNotEqual(
+            deck.theme_frame("cyber", "abc123"), deck.theme_frame("retro", "abc123")
+        )
+
+    def _theme_config(self):
+        config = sample_config()
+        config["profiles"][0]["buttons"][0]["kind"] = "app"
+        config["profiles"][0]["buttons"][0]["command"] = "notepad.exe"
+        config["profiles"][0]["theme"] = "cyber"
+        return deck.normalize_config(config)
+
+    def test_theme_reaches_a_board_that_announced_it(self):
+        normalized = self._theme_config()
+        device = self._icon_device("theme-on.json")
+        connection = FakeSerial()
+        device._connection = connection
+        device._tft_icons = True
+        device._tft_theme = True
+
+        device._sync(normalized, "abc123")
+
+        self.assertEqual(connection.writes[0], deck.config_frame(normalized, "abc123"))
+        self.assertEqual(connection.writes[1], deck.theme_frame("cyber", "abc123"))
+        # the theme lands before the icons, because the icons are blended
+        # against the background it names
+        self.assertTrue(connection.writes[2].startswith(b"CFG_ICON_BEGIN\tabc123\t0\t32\n"))
+        self.assertEqual(device.status()["theme"], "cyber")
+        self.assertTrue(device.status()["last_sync"])
+
+        background = deck.theme_background("cyber")
+        self.assertEqual(background, "#05070e")
+        buttons = deck.active_buttons(normalized)
+        expected = deck.app_icon_frames(buttons, "abc123", background)
+        self.assertTrue(expected)
+        # icons go down in chunks because the board only has a 256 byte receive
+        # buffer, so the bytes are held end to end rather than write by write
+        self.assertEqual(
+            b"".join(frame for _, frame in expected), b"".join(connection.writes[2:])
+        )
+
+    def test_theme_is_left_alone_on_a_board_that_does_not_announce_it(self):
+        """Older firmware keeps working: no theme frame, same icons as before."""
+        normalized = self._theme_config()
+        device = self._icon_device("theme-off.json")
+        connection = FakeSerial()
+        device._connection = connection
+        device._tft_icons = True
+        device._tft_theme = False
+
+        device._sync(normalized, "abc123")
+
+        self.assertEqual(connection.writes[0], deck.config_frame(normalized, "abc123"))
+        joined = b"".join(connection.writes)
+        self.assertNotIn(b"CFG_THEME", joined)
+        self.assertIsNone(device.status()["theme"])
+        # and the icons are the black-blended ones, exactly as they always were
+        buttons = deck.active_buttons(normalized)
+        expected = deck.app_icon_frames(buttons, "abc123", "#000000")
+        self.assertEqual(
+            b"".join(frame for _, frame in expected), b"".join(connection.writes[1:])
+        )
+
+    def test_a_rejected_theme_is_retried_and_never_takes_the_slots_down(self):
+        normalized = self._theme_config()
+        device = self._icon_device("theme-retry.json")
+        connection = FakeSerial(theme_errors=1)
+        device._connection = connection
+        device._tft_icons = True
+        device._tft_theme = True
+
+        device._sync(normalized, "abc123")
+
+        self.assertEqual(connection.theme_frames, 2)
+        self.assertEqual(device.status()["theme"], "cyber")
+        self.assertTrue(device.status()["last_sync"])
+
+    def test_a_theme_that_never_lands_leaves_the_workspace_alone(self):
+        normalized = self._theme_config()
+        device = self._icon_device("theme-lost.json")
+        connection = FakeSerial(theme_errors=deck._THEME_ATTEMPTS)
+        device._connection = connection
+        device._tft_icons = True
+        device._tft_theme = True
+
+        with self.assertLogs("adeck", level="WARNING") as captured:
+            device._sync(normalized, "abc123")
+
+        self.assertEqual(connection.theme_frames, deck._THEME_ATTEMPTS)
+        self.assertTrue(
+            any("was not accepted by the board" in line for line in captured.output),
+            captured.output,
+        )
+        # the slots still went through: a refused theme is not a failed sync
+        self.assertTrue(device.status()["last_sync"])
+        self.assertIsNone(device.status()["theme"])
+
+    def test_themes_endpoint_serves_the_registry(self):
+        with tempfile.TemporaryDirectory() as temp:
+            store = deck.ConfigStore(Path(temp) / "config.json")
+            server = deck.BridgeServer(
+                ("127.0.0.1", 0), deck.BridgeHandler, store, StubDevice(), "token"
+            )
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            base = f"http://127.0.0.1:{server.server_address[1]}"
+            try:
+                with urllib.request.urlopen(base + "/api/themes") as response:
+                    self.assertIn(
+                        "application/json", response.headers.get("Content-Type", "")
+                    )
+                    payload = json.load(response)
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join(timeout=2)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["default"], "adeck-classic")
+        self.assertEqual(len(payload["themes"]), 4)
+        self.assertEqual(payload["themes"][1]["id"], "cyber")
+
+    def test_firmware_parses_the_theme_transaction(self):
+        firmware = (deck.BASE_DIR / "firmware" / "ADeck" / "ADeck.ino").read_text(encoding="utf-8")
+        for token in (
+            "CFG_THEME_BEGIN",
+            "CFG_THEME_VALUE",
+            "CFG_THEME_END",
+            "CFG_THEME_OK",
+            "CFG_THEME_ERR",
+            "ADECK_CAPS\\tTHEME",
+            "THEME_BACKGROUND",
+            "THEME_TEXT",
+            "THEME_SELECTED",
+            "THEME_PRESSED",
+            "ThemeConfig",
+        ):
+            self.assertIn(token, firmware, token)
+        # the theme is carried in the persisted record, so a power cycle keeps it
+        self.assertIn("uint16_t theme[THEME_COUNT];", firmware)
+        self.assertIn("CONFIG_VERSION = 3", firmware)
+
+    def test_web_theme_layer_is_wired_up(self):
+        script = (deck.WEB_DIR / "script.js").read_text(encoding="utf-8")
+        style = (deck.WEB_DIR / "style.css").read_text(encoding="utf-8")
+        page = (deck.WEB_DIR / "index.html").read_text(encoding="utf-8")
+        for token in (
+            '"/api/themes"',
+            "applyDeckTheme",
+            "normalizeThemeId",
+            "data-deck-theme",
+            "themeId",
+        ):
+            self.assertIn(token, script, token)
+        self.assertIn("themeModal", page)
+        self.assertIn("themeBtn", page)
+        self.assertIn(".theme-card", style)
+        self.assertIn(".theme-tft", style)
 
 
 if __name__ == "__main__":

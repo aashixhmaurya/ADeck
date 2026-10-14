@@ -14,7 +14,7 @@ if not "%CODE%"=="0" (
   echo Setup did not finish.
   echo Next step: open ADeck-Control.bat and choose Check System or Install / Repair.
 ) else (
-  echo ADeck is ready. Daily use: double-click Start ADeck.bat
+  echo ADeck is ready. Daily use: open the ADeck desktop icon ^(or Start ADeck.bat^).
 )
 pause
 exit /b %CODE%

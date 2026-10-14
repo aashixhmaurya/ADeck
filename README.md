@@ -41,27 +41,28 @@ Protocol handshake: `ADECK_PING` / `ADECK_PONG` (version 2).
 ## Project structure
 
 ```text
-ADeck-Control.bat      control menu (start, check, repair, logs…)
-Setup ADeck.bat        first-time installer
-Start ADeck.bat        daily launcher
-adeck.bat              alias for ADeck-Control.bat
+ADeck-Control.bat          control menu (start, check, repair, logs…)
+Setup ADeck.bat            first-time installer
+Start ADeck.bat            daily launcher (browser fallback)
+adeck.bat                  alias for ADeck-Control.bat
 
-deck.py                backend + serial bridge
-adeck_control.py       CLI for the control menu
-install_firmware.py    flash / verify UNO firmware
-install.ps1            setup script (called by Setup ADeck.bat)
+deck.py                    backend + serial bridge
+adeck_control.py           CLI for the control menu
+install_firmware.py        flash / verify UNO firmware
+install.ps1                setup script (called by Setup ADeck.bat)
 
-index.html             web UI
-script.js
-style.css
-manifest.webmanifest   desktop-app manifest (installable window)
-sw.js                  service worker (app shell cache, never caches /api)
-icon-192.png           app icons
-icon-512.png
-icon-maskable-512.png
-adeck.ico              Windows shortcut / favicon icon
+ADeck Web app/             local UI served by deck.py
+  index.html
+  script.js
+  style.css
+  manifest.webmanifest     installable app window
+  sw.js                    app-shell cache (never caches /api)
+  icon-192.png             app icons (add these for PWA / shortcuts)
+  icon-512.png
+  icon-maskable-512.png
+  adeck.ico                Windows shortcut / favicon
 
-firmware/ADeck/ADeck.ino   Arduino sketch
+firmware/ADeck/ADeck.ino   Arduino sketch (canonical firmware)
 
 requirements.txt
 test_reliability.py
@@ -277,7 +278,7 @@ Run tests:
 JS syntax check:
 
 ```powershell
-node --check script.js
+node --check ".\ADeck Web app\script.js"
 ```
 
 ## From-scratch verification

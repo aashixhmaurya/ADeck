@@ -12,9 +12,6 @@
   <link rel="icon" href="./favicon.ico" sizes="any" />
   <link rel="icon" type="image/png" href="./icon-192.png" sizes="192x192" />
   <link rel="apple-touch-icon" href="./icon-192.png" />
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Doto:ROND,wght@0..100,100..900&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="./style.css" />
 </head>
 
@@ -43,7 +40,7 @@
       <span class="sep" aria-hidden="true"></span>
       <span class="device-state">
         <span class="state-dot" id="topStateDot" aria-hidden="true"></span>
-        <span id="statusLine" class="conn-pill">READY</span>
+        <span id="statusLine">READY</span>
       </span>
       <span class="sep" aria-hidden="true"></span>
       <span id="clock" class="top-clock">--:--:--</span>
@@ -71,6 +68,11 @@
       <ul id="profileList" class="profile-list" role="listbox" aria-label="Profiles"></ul>
 
       <div class="zone-foot zone-foot-stack">
+        <div class="btn-row">
+          <button id="themeBtn" class="ghost-btn theme-btn" type="button" title="Change this workspace's theme">
+            THEME <span id="themeBtnName" class="theme-btn-name">MIST</span>
+          </button>
+        </div>
         <div class="btn-row">
           <button id="renameProfileBtn" class="ghost-btn" type="button">RENAME</button>
           <button id="duplicateProfileBtn" class="ghost-btn" type="button">DUPLICATE</button>
@@ -319,7 +321,7 @@
       <header class="panel-header">
         <p class="panel-kicker mono muted">PREFERENCES</p>
         <h2 class="panel-title mono">SETTINGS</h2>
-        <p class="panel-lead mono muted">Local UI preferences. Device options stay offline until a bridge exists.</p>
+        <p class="panel-lead mono muted">Local preferences. Brightness, sleep, and Wi‑Fi are saved here until the board supports them.</p>
       </header>
 
       <form id="settingsForm" class="settings-form" autocomplete="off">
@@ -351,6 +353,7 @@
           <label class="field">
             <span class="field-label">BRIGHTNESS <em class="mono muted" id="brightnessVal">80%</em></span>
             <input type="range" id="settingBrightness" name="brightness" min="10" max="100" step="5" value="80" />
+            <span class="field-hint mono muted">Saved locally for now — TFT brightness comes later</span>
           </label>
           <label class="field">
             <span class="field-label">SLEEP TIMEOUT</span>
@@ -360,7 +363,7 @@
               <option value="300">5 minutes</option>
               <option value="0">Never</option>
             </select>
-            <span class="field-hint mono muted">PLACEHOLDER — applied when device bridge is connected</span>
+            <span class="field-hint mono muted">Saved locally for now — device sleep comes later</span>
           </label>
           <label class="field">
             <span class="field-label">DEFAULT PROFILE</span>
@@ -415,7 +418,7 @@
       <dl class="about-list mono">
         <div class="about-row">
           <dt>Version</dt>
-          <dd id="aboutVersion">1.2.0</dd>
+          <dd id="aboutVersion">2.1.0</dd>
         </div>
         <div class="about-row">
           <dt>Build</dt>
@@ -423,7 +426,7 @@
         </div>
         <div class="about-row">
           <dt>Hardware</dt>
-          <dd>Arduino UNO R4 WiFi + 2.4&quot; TFT + 6 keys (2×3)</dd>
+          <dd>Arduino UNO R4 WiFi + 2.4&quot; TFT + 6 keys (3×2)</dd>
         </div>
         <div class="about-row">
           <dt>License</dt>
@@ -449,8 +452,8 @@
       <span class="status-label">PROFILE</span>
       <span class="status-value mono" id="footerProfile">—</span>
     </div>
-    <button id="saveBtn" class="save-btn status-save" type="button" title="Save &amp; generate JSON (Ctrl+S)">
-      SAVE &amp; JSON
+    <button id="saveBtn" class="save-btn status-save" type="button" title="Save &amp; sync to device (Ctrl+S)">
+      SAVE
     </button>
   </footer>
 
@@ -547,6 +550,43 @@
       <div class="dialog-foot">
         <button type="button" id="offlineStartBtn" class="save-btn" hidden>START SERVICE</button>
         <button type="button" id="offlineRetryBtn" class="ghost-btn">RETRY NOW</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="themeModal" hidden role="dialog" aria-modal="true" aria-labelledby="themeModalTitle">
+    <div class="modal-panel modal-panel-wide theme-panel">
+      <div class="modal-head">
+        <div class="modal-title-block">
+          <span class="mono muted modal-kicker">THEME</span>
+          <h3 id="themeModalTitle">WORKSPACE APPEARANCE</h3>
+        </div>
+      </div>
+
+      <div class="theme-body">
+        <div id="themeList" class="theme-list" role="radiogroup" aria-label="Themes"></div>
+
+        <aside class="theme-preview" aria-label="Theme preview">
+          <div class="theme-preview-head">
+            <span class="mono muted">PREVIEW</span>
+            <span class="mono muted" id="themePreviewId">—</span>
+          </div>
+          <div class="theme-tft" id="themeTft" role="img" aria-label="Preview of the deck's screen">
+            <div class="theme-tft-chrome">
+              <span class="mono">ADECK</span>
+              <span class="mono theme-tft-key">K—</span>
+            </div>
+            <div class="theme-tft-grid" id="themeTftGrid"></div>
+          </div>
+        </aside>
+      </div>
+
+      <div class="modal-foot theme-foot">
+        <span class="mono muted" id="themeStatus">—</span>
+        <div class="btn-row">
+          <button type="button" id="themeCancelBtn" class="ghost-btn">CANCEL</button>
+          <button type="button" id="themeApplyBtn" class="save-btn">APPLY THEME</button>
+        </div>
       </div>
     </div>
   </div>

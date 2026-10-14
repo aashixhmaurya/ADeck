@@ -48,8 +48,8 @@ LOCAL_DATA_DIR = (
     else DATA_DIR
 )
 CONFIG_PATH = DATA_DIR / "config.json"
-BACKUP_PATH = DATA_DIR / "config.backup.json"
-IDENTITY_PATH = DATA_DIR / "device.json"
+# Same path the firmware installer writes — keep COM rediscovery consistent.
+IDENTITY_PATH = LOCAL_DATA_DIR / "board.json"
 TOKEN_PATH = LOCAL_DATA_DIR / "control.token"
 RUNTIME_PATH = LOCAL_DATA_DIR / "runtime.json"
 LOCK_PATH = LOCAL_DATA_DIR / "runtime.lock"
@@ -75,6 +75,338 @@ LOGGER = logging.getLogger("adeck")
 
 mimetypes.add_type("application/manifest+json", ".webmanifest")
 mimetypes.add_type("text/javascript", ".js")
+
+
+# Themes: one definition for web CSS vars + TFT RGB565 colours.
+# Profiles store the stable id; display names can change freely.
+
+DEFAULT_THEME_ID = "adeck-classic"  # id kept for old saves; UI name is Carbon Mist
+
+_THEMES = [
+    {
+        "id": "adeck-classic",
+        "name": "Carbon Mist",
+        "short": "Mist",
+        "description": "Cool blue-grey atmosphere, near-black controls, one red signal. Calm industrial hardware.",
+        "web": {
+            "light": {
+                "--bg": "#b8c7c8",
+                "--bg-2": "#d8e0df",
+                "--bg-3": "#9dadae",
+                "--ink": "#080d0e",
+                "--ink-2": "#1b2324",
+                "--muted": "#556366",
+                "--line": "#080d0e",
+                "--accent": "#b3121f",
+                "--sage": "#2f5c5e",
+                "--danger": "#8f0f1a",
+                "--ok": "#2f5c5e",
+                "--slot-empty": "#1b2324",
+                "--screen": "#080d0e",
+                "--bezel": "#111718",
+                "--bezel-edge": "#1b2324",
+                "--panel-focus": "#e7eeee",
+                "--on-dark": "#e7eeee",
+                "--code-bg": "#080d0e",
+                "--code-fg": "#d8e0df",
+                "--toast-shadow": "#080d0e",
+                "--active-bg": "#080d0e",
+                "--active-fg": "#e7eeee",
+                "--hover-bg": "#d8e0df",
+                "--btn-solid-bg": "#080d0e",
+                "--btn-solid-fg": "#e7eeee",
+            },
+            "dark": {
+                "--bg": "#080d0e",
+                "--bg-2": "#111718",
+                "--bg-3": "#1b2324",
+                "--ink": "#e7eeee",
+                "--ink-2": "#b6c4c5",
+                "--muted": "#718082",
+                "--line": "#2b3637",
+                "--accent": "#e32636",
+                "--sage": "#66a3a8",
+                "--danger": "#f08a8a",
+                "--ok": "#66a3a8",
+                "--slot-empty": "#1b2324",
+                "--screen": "#05090a",
+                "--bezel": "#111718",
+                "--bezel-edge": "#2b3637",
+                "--panel-focus": "#1b2324",
+                "--on-dark": "#e7eeee",
+                "--code-bg": "#05090a",
+                "--code-fg": "#cfe0e0",
+                "--toast-shadow": "#000000",
+                "--active-bg": "#1b2324",
+                "--active-fg": "#e7eeee",
+                "--hover-bg": "#151d1e",
+                "--btn-solid-bg": "#1b2324",
+                "--btn-solid-fg": "#e7eeee",
+            },
+        },
+        "tft": {
+            "background": "#080d0e",
+            "text": "#e7eeee",
+            "textMuted": "#445355",
+            "accent": "#e32636",
+            "accentSecondary": "#3d4a4c",
+            "selected": "#ffffff",
+            "pressed": "#2a1216",
+        },
+    },
+    {
+        "id": "cyber",
+        "name": "Cyber",
+        "short": "Cyber",
+        "description": "Deep space and electric cyan. Cool, high-contrast, built for a dark room.",
+        "web": {
+            "light": {
+                "--bg": "#edf4f9",
+                "--bg-2": "#ddeaf3",
+                "--bg-3": "#c4d8e7",
+                "--ink": "#04121c",
+                "--ink-2": "#0a2030",
+                "--muted": "#46647a",
+                "--line": "#0b1b28",
+                "--accent": "#0e7490",
+                "--sage": "#0f766e",
+                "--danger": "#b42318",
+                "--ok": "#0f766e",
+                "--slot-empty": "#c2d2de",
+                "--screen": "#04070e",
+                "--bezel": "#0c1520",
+                "--bezel-edge": "#22384e",
+                "--panel-focus": "#ffffff",
+                "--on-dark": "#edf4f9",
+                "--code-bg": "#04060c",
+                "--code-fg": "#a5e8f2",
+                "--toast-shadow": "#04121c",
+                "--active-bg": "#062b3a",
+                "--active-fg": "#eafbff",
+                "--hover-bg": "#d2e4ef",
+                "--btn-solid-bg": "#0e7490",
+                "--btn-solid-fg": "#ffffff",
+            },
+            "dark": {
+                "--bg": "#070a12",
+                "--bg-2": "#0d1220",
+                "--bg-3": "#141b2c",
+                "--ink": "#e6f6ff",
+                "--ink-2": "#b9d4e4",
+                "--muted": "#6c8aa0",
+                "--line": "#1e2a3d",
+                "--accent": "#22d3ee",
+                "--sage": "#34d399",
+                "--danger": "#ff5c7a",
+                "--ok": "#34d399",
+                "--slot-empty": "#1a2438",
+                "--screen": "#04060c",
+                "--bezel": "#0a0f1a",
+                "--bezel-edge": "#21304a",
+                "--panel-focus": "#131c2e",
+                "--on-dark": "#e6f6ff",
+                "--code-bg": "#04060c",
+                "--code-fg": "#9fe8f5",
+                "--toast-shadow": "#000208",
+                "--active-bg": "#10243a",
+                "--active-fg": "#eafbff",
+                "--hover-bg": "#111a2a",
+                "--btn-solid-bg": "#22d3ee",
+                "--btn-solid-fg": "#04121a",
+            },
+        },
+        "tft": {
+            "background": "#05070e",
+            "text": "#d7f7ff",
+            "textMuted": "#2a3a4a",
+            "accent": "#22d3ee",
+            "accentSecondary": "#7c3aed",
+            "selected": "#67e8f9",
+            "pressed": "#101c33",
+        },
+    },
+    {
+        "id": "terminal",
+        "name": "Terminal",
+        "short": "Terminal",
+        "description": "Phosphor console. Deep green on near-black, the way a terminal should read.",
+        "web": {
+            "light": {
+                "--bg": "#edf5ee",
+                "--bg-2": "#ddebe0",
+                "--bg-3": "#c2d9c8",
+                "--ink": "#06170d",
+                "--ink-2": "#0b2a17",
+                "--muted": "#3f6b4e",
+                "--line": "#0b2a17",
+                "--accent": "#10703a",
+                "--sage": "#10703a",
+                "--danger": "#a32318",
+                "--ok": "#10703a",
+                "--slot-empty": "#c2d6c8",
+                "--screen": "#020604",
+                "--bezel": "#08130d",
+                "--bezel-edge": "#1e4630",
+                "--panel-focus": "#ffffff",
+                "--on-dark": "#edf5ee",
+                "--code-bg": "#020604",
+                "--code-fg": "#8fe8a8",
+                "--toast-shadow": "#06170d",
+                "--active-bg": "#0b3a21",
+                "--active-fg": "#e4fbea",
+                "--hover-bg": "#d2e6d7",
+                "--btn-solid-bg": "#10703a",
+                "--btn-solid-fg": "#ffffff",
+            },
+            "dark": {
+                "--bg": "#040a07",
+                "--bg-2": "#0a1410",
+                "--bg-3": "#122119",
+                "--ink": "#b8f0c8",
+                "--ink-2": "#8fd3a4",
+                "--muted": "#4e7a5e",
+                "--line": "#1b3a28",
+                "--accent": "#34d058",
+                "--sage": "#6ee787",
+                "--danger": "#e5534b",
+                "--ok": "#6ee787",
+                "--slot-empty": "#14261b",
+                "--screen": "#020604",
+                "--bezel": "#06100b",
+                "--bezel-edge": "#1e4630",
+                "--panel-focus": "#102016",
+                "--on-dark": "#b8f0c8",
+                "--code-bg": "#020604",
+                "--code-fg": "#7be495",
+                "--toast-shadow": "#000000",
+                "--active-bg": "#0f2a1b",
+                "--active-fg": "#c8f7d6",
+                "--hover-bg": "#0c1e14",
+                "--btn-solid-bg": "#34d058",
+                "--btn-solid-fg": "#04140a",
+            },
+        },
+        "tft": {
+            "background": "#020604",
+            "text": "#b6f2c4",
+            "textMuted": "#17452b",
+            "accent": "#34d058",
+            "accentSecondary": "#0e7a3c",
+            "selected": "#7be495",
+            "pressed": "#06251a",
+        },
+    },
+    {
+        "id": "retro",
+        "name": "Retro Arcade",
+        "short": "Retro",
+        "description": "Cabinet panel. Warm amber and orange, cyan trim, chunky and nostalgic.",
+        "web": {
+            "light": {
+                "--bg": "#f6eee2",
+                "--bg-2": "#ebdfcc",
+                "--bg-3": "#d8c6ab",
+                "--ink": "#1e120a",
+                "--ink-2": "#35200f",
+                "--muted": "#6e4b2a",
+                "--line": "#1e120a",
+                "--accent": "#a8500a",
+                "--sage": "#0f7280",
+                "--danger": "#a32318",
+                "--ok": "#4f7a22",
+                "--slot-empty": "#d6c4a8",
+                "--screen": "#100a08",
+                "--bezel": "#1c130d",
+                "--bezel-edge": "#4a3221",
+                "--panel-focus": "#ffffff",
+                "--on-dark": "#f6eee2",
+                "--code-bg": "#14100c",
+                "--code-fg": "#ffc978",
+                "--toast-shadow": "#1e120a",
+                "--active-bg": "#6b3a12",
+                "--active-fg": "#fff1dc",
+                "--hover-bg": "#e2d2ba",
+                "--btn-solid-bg": "#a8500a",
+                "--btn-solid-fg": "#ffffff",
+            },
+            "dark": {
+                "--bg": "#17100c",
+                "--bg-2": "#20160f",
+                "--bg-3": "#2c1f16",
+                "--ink": "#ffe6c2",
+                "--ink-2": "#e8c79a",
+                "--muted": "#a97f55",
+                "--line": "#3e2a1c",
+                "--accent": "#ff9e2c",
+                "--sage": "#23b5c9",
+                "--danger": "#e5533b",
+                "--ok": "#7fbf4d",
+                "--slot-empty": "#33241a",
+                "--screen": "#100a08",
+                "--bezel": "#1c130d",
+                "--bezel-edge": "#4a3221",
+                "--panel-focus": "#2a1c13",
+                "--on-dark": "#ffe6c2",
+                "--code-bg": "#100a08",
+                "--code-fg": "#ffc978",
+                "--toast-shadow": "#0a0604",
+                "--active-bg": "#3a2415",
+                "--active-fg": "#fff1dc",
+                "--hover-bg": "#2a1c13",
+                "--btn-solid-bg": "#ff9e2c",
+                "--btn-solid-fg": "#1a0f07",
+            },
+        },
+        "tft": {
+            "background": "#100a08",
+            "text": "#ffe9c7",
+            "textMuted": "#5a3d24",
+            "accent": "#ff9e2c",
+            "accentSecondary": "#23b5c9",
+            "selected": "#ffc978",
+            "pressed": "#2a1710",
+        },
+    },
+]
+
+# the order the panel expects its values in, and the crc that guards them
+TFT_THEME_KEYS = (
+    "background",
+    "text",
+    "textMuted",
+    "accent",
+    "accentSecondary",
+    "selected",
+    "pressed",
+)
+
+THEMES = {theme["id"]: theme for theme in _THEMES}
+
+
+def theme_for(theme_id):
+    """The named theme, or the default when the id is missing or unknown."""
+    key = str(theme_id or "").strip().lower()
+    return THEMES.get(key) or THEMES[DEFAULT_THEME_ID]
+
+
+def theme_payload():
+    return {
+        "ok": True,
+        "default": DEFAULT_THEME_ID,
+        "order": [theme["id"] for theme in _THEMES],
+        "tftKeys": list(TFT_THEME_KEYS),
+        "themes": [
+            {
+                "id": theme["id"],
+                "name": theme["name"],
+                "short": theme["short"],
+                "description": theme["description"],
+                "web": theme["web"],
+                "tft": theme["tft"],
+            }
+            for theme in _THEMES
+        ],
+    }
 
 
 def control_module():
@@ -230,7 +562,14 @@ def normalize_config(raw):
                 slot["kind"] = kind
             slots[index] = slot
 
-        profile = {"name": name, "buttons": [slots[index] for index in range(SLOT_COUNT)]}
+        raw_theme = raw_profile.get("theme")
+        theme = theme_for(raw_theme if isinstance(raw_theme, str) else "")["id"]
+
+        profile = {
+            "name": name,
+            "theme": theme,
+            "buttons": [slots[index] for index in range(SLOT_COUNT)],
+        }
         if profile_id is not None:
             profile["id"] = profile_id
         profiles.append(profile)
@@ -280,6 +619,25 @@ def active_buttons(config):
     return profile["buttons"]
 
 
+def active_theme_id(config):
+    """The theme of the active workspace, or the default if it cannot be read."""
+    if not config:
+        return DEFAULT_THEME_ID
+    try:
+        active = config["active_profile"]
+        profile = next(item for item in config["profiles"] if item["name"] == active)
+    except (KeyError, TypeError, StopIteration):
+        return DEFAULT_THEME_ID
+    return theme_for(profile.get("theme"))["id"]
+
+
+def _crc16_next(crc, value):
+    crc ^= value << 8
+    for _ in range(8):
+        crc = ((crc << 1) ^ 0x1021) & 0xFFFF if crc & 0x8000 else (crc << 1) & 0xFFFF
+    return crc
+
+
 def crc16_ccitt_false(buttons):
     crc = 0xFFFF
     for index, button in enumerate(buttons):
@@ -295,9 +653,7 @@ def crc16_ccitt_false(buttons):
             ]
         ) + label
         for value in payload:
-            crc ^= value << 8
-            for _ in range(8):
-                crc = ((crc << 1) ^ 0x1021) & 0xFFFF if crc & 0x8000 else (crc << 1) & 0xFFFF
+            crc = _crc16_next(crc, value)
     return crc
 
 
@@ -309,6 +665,42 @@ def config_frame(config, txid):
             f"CFG_SLOT\t{txid}\t{index}\t{button['color'].upper()}\t{button['label']}"
         )
     lines.append(f"CFG_END\t{txid}\t{crc16_ccitt_false(buttons):04X}")
+    return ("\n".join(lines) + "\n").encode("ascii")
+
+
+def theme_values(theme_id):
+    """The panel colours for a theme, as RGB triples in the order the board wants."""
+    tft = theme_for(theme_id)["tft"]
+    return [_hex_rgb_tuple(tft[key]) for key in TFT_THEME_KEYS]
+
+
+def theme_background(theme_id):
+    """What the panel paints behind everything, so icons can be blended onto it."""
+    return theme_for(theme_id)["tft"]["background"]
+
+
+def theme_crc(values):
+    crc = 0xFFFF
+    for index, (red, green, blue) in enumerate(values):
+        for value in (index, red, green, blue):
+            crc = _crc16_next(crc, value)
+    return crc
+
+
+def theme_frame(theme_id, txid):
+    """The theme half of a sync. Sent after the slots and before the icons.
+
+    Its own transaction rather than part of CFG_BEGIN: a theme can change on
+    its own, and a rejected theme must not be able to take the slot config down
+    with it.
+    """
+    values = theme_values(theme_id)
+    lines = [f"CFG_THEME_BEGIN\t{txid}\t{len(values)}"]
+    for index, (red, green, blue) in enumerate(values):
+        lines.append(
+            f"CFG_THEME_VALUE\t{txid}\t{index}\t#{red:02X}{green:02X}{blue:02X}"
+        )
+    lines.append(f"CFG_THEME_END\t{txid}\t{theme_crc(values):04X}")
     return ("\n".join(lines) + "\n").encode("ascii")
 
 
@@ -1241,6 +1633,15 @@ def list_installed_apps():
 
 _ICON_SIZE = 32
 _TFT_ICON_SIZE = 32
+# an icon goes to the board in small chunks: it has a 256 byte receive buffer
+# and reads it between screen paints, so a single 4.6 KB burst overflows it
+_ICON_ROWS_PER_CHUNK = 8
+_ICON_CHUNK_DELAY = 0.004
+_ICON_ATTEMPTS = 3
+_ICON_ACK_TIMEOUT = 1.5
+# the theme frame is a handful of short lines, so it needs far less patience
+_THEME_ATTEMPTS = 2
+_THEME_ACK_TIMEOUT = 1.5
 _ICON_EXTRACT_LOCK = threading.Lock()
 _ICON_APIS_READY = False
 _ICON_FILE_SUFFIXES = {".dll", ".exe", ".ico", ".lnk"}
@@ -1371,7 +1772,15 @@ def _png_from_rgba(width, height, rgba):
     )
 
 
+_PLACEHOLDER_CACHE = {}
+
+
 def _placeholder_icon_png(size=_ICON_SIZE):
+    # The picker asks for one icon per app, so this gets called a lot. The
+    # pixels never change - build each size once.
+    cached = _PLACEHOLDER_CACHE.get(size)
+    if cached is not None:
+        return cached
     row = []
     for y in range(size):
         for x in range(size):
@@ -1383,7 +1792,9 @@ def _placeholder_icon_png(size=_ICON_SIZE):
                 row.extend((210, 208, 200, 255))
             else:
                 row.extend((120, 118, 110, 255))
-    return _png_from_rgba(size, size, bytes(row))
+    png = _png_from_rgba(size, size, bytes(row))
+    _PLACEHOLDER_CACHE[size] = png
+    return png
 
 
 def _hicon_to_rgba(hicon, size=_ICON_SIZE):
@@ -1593,7 +2004,7 @@ def app_icon_rgb565(command, background="#000000"):
     )
 
 
-def slot_icon_frame(index, button, txid):
+def slot_icon_frame(index, button, txid, background="#000000"):
     if not isinstance(button, dict):
         return b""
     if str(button.get("kind") or "").strip().lower() != "app":
@@ -1601,7 +2012,10 @@ def slot_icon_frame(index, button, txid):
     command = str(button.get("command") or "").strip()
     if not command:
         return b""
-    pixels = app_icon_rgb565(command, button.get("color") or "#000000")
+    # the panel draws app icons straight on its background, so that is what the
+    # host blends the transparency against - which is the workspace theme's
+    # background, or black when no theme has said otherwise
+    pixels = app_icon_rgb565(command, background)
     row_bytes = _TFT_ICON_SIZE * 2
     if len(pixels) != _TFT_ICON_SIZE * row_bytes:
         return b""
@@ -1615,10 +2029,10 @@ def slot_icon_frame(index, button, txid):
     return ("\n".join(lines) + "\n").encode("ascii")
 
 
-def app_icon_frames(buttons, txid):
+def app_icon_frames(buttons, txid, background="#000000"):
     frames = []
     for index, button in enumerate(buttons or []):
-        frame = slot_icon_frame(index, button, txid)
+        frame = slot_icon_frame(index, button, txid, background)
         if frame:
             frames.append((index, frame))
     return frames
@@ -1735,6 +2149,8 @@ class ADeckDevice:
         self._port = None
         self._firmware = None
         self._tft_icons = False
+        self._tft_theme = False
+        self._theme_id = None
         self._last_error = ""
         self._last_sync = None
         self._last_txid = None
@@ -1744,13 +2160,15 @@ class ADeckDevice:
         self.thread = threading.Thread(target=self._run, name="adeck-device", daemon=True)
 
     def _load_identity(self):
+        # Prefer board.json; still accept older device.json paths from early builds.
         paths = [
             self.identity_path,
-            self.identity_path.with_name("board.json"),
-            self.identity_path.with_name("board_identity.json"),
-            LOCAL_DATA_DIR / "device.json",
             LOCAL_DATA_DIR / "board.json",
+            LOCAL_DATA_DIR / "device.json",
             LOCAL_DATA_DIR / "board_identity.json",
+            DATA_DIR / "board.json",
+            DATA_DIR / "device.json",
+            DATA_DIR / "board_identity.json",
         ]
         for path in paths:
             try:
@@ -1801,6 +2219,7 @@ class ADeckDevice:
                 "connected": self._connection is not None,
                 "port": self._port,
                 "firmware": self._firmware,
+                "theme": self._theme_id,
                 "last_sync": self._last_sync,
                 "last_transaction_id": self._last_txid,
                 "error": self._last_error or None,
@@ -1838,6 +2257,8 @@ class ADeckDevice:
             self._port = None
             self._firmware = None
             self._tft_icons = False
+            self._tft_theme = False
+            self._theme_id = None
             self._last_sync = None
             self._last_error = "Reconnecting"
         if connection is not None:
@@ -1933,6 +2354,7 @@ class ADeckDevice:
                 line = connection.readline().decode("ascii", errors="ignore").strip()
                 if line == f"ADECK_PONG\t{PROTOCOL_VERSION}":
                     self._tft_icons = False
+                    self._tft_theme = False
                     caps_deadline = time.monotonic() + 0.3
                     while time.monotonic() < caps_deadline and not self._stop.is_set():
                         extra = connection.readline().decode(
@@ -1940,9 +2362,14 @@ class ADeckDevice:
                         ).strip()
                         if extra == "ADECK_CAPS\tICON":
                             self._tft_icons = True
-                            break
-                        if extra.startswith("PRESS\t"):
+                        elif extra == "ADECK_CAPS\tTHEME":
+                            self._tft_theme = True
+                        elif extra.startswith("PRESS\t"):
                             self._handle_line(extra)
+                        if self._tft_icons and self._tft_theme:
+                            break
+                    # a board that only ever said ICON simply runs the clock out.
+                    # cheaper than guessing from a quiet read and losing THEME
                     return connection
                 if line.startswith("PRESS\t"):
                     self._handle_line(line)
@@ -2006,6 +2433,8 @@ class ADeckDevice:
             self._port = None
             self._firmware = None
             self._tft_icons = False
+            self._tft_theme = False
+            self._theme_id = None
             self._last_sync = False
             if error:
                 self._last_error = error
@@ -2056,6 +2485,9 @@ class ADeckDevice:
         elif line == "ADECK_CAPS\tICON":
             with self._state_lock:
                 self._tft_icons = True
+        elif line == "ADECK_CAPS\tTHEME":
+            with self._state_lock:
+                self._tft_theme = True
         elif line == f"ADECK_READY\t{PROTOCOL_VERSION}":
             self._resync.set()
 
@@ -2076,7 +2508,19 @@ class ADeckDevice:
                     self._last_txid = txid
                     self._last_error = ""
                 LOGGER.info("Synchronized transaction %s", txid)
-                self._push_app_icons(connection, active_buttons(config), txid)
+                # theme first, then icons: the panel blends each icon onto the
+                # theme's background, so the theme has to be in place before the
+                # pixels that sit on it are chosen
+                wanted = active_theme_id(config)
+                in_force = self._push_theme(connection, wanted, txid)
+                # no theme in force means a board that still paints black - the
+                # old firmware - so the icons go back to being blended on black
+                self._push_app_icons(
+                    connection,
+                    active_buttons(config),
+                    txid,
+                    theme_background(in_force) if in_force else "#000000",
+                )
                 return
             if line.startswith(f"CFG_ERR\t{txid}\t"):
                 reason = line.split("\t", 2)[2]
@@ -2089,48 +2533,126 @@ class ADeckDevice:
                 self._handle_line(line)
         raise TimeoutError("ADeck did not acknowledge the configuration")
 
-    def _push_app_icons(self, connection, buttons, txid):
+    def _push_theme(self, connection, theme_id, txid):
+        """Send the workspace theme, retrying the frame like the icons do.
+
+        Returns the theme the panel is now wearing, or None when there is none
+        to report - a board that never announced CFG_THEME_* support is left
+        alone entirely, so older firmware keeps working with a newer host. A
+        board that refuses the frame keeps whatever it had before, so the old
+        id is handed back rather than the one we failed to send.
+        """
+        with self._state_lock:
+            capable = self._tft_theme
+        if connection is None or not capable:
+            return None
+        expected = f"CFG_THEME_OK\t{txid}"
+        rejected = f"CFG_THEME_ERR\t{txid}\t"
+        frame = theme_frame(theme_id, txid)
+        for attempt in range(1, _THEME_ATTEMPTS + 1):
+            if self._stop.is_set():
+                return self._theme_id
+            try:
+                connection.write(frame)
+                connection.flush()
+                deadline = time.monotonic() + _THEME_ACK_TIMEOUT
+                while time.monotonic() < deadline and not self._stop.is_set():
+                    reply = connection.readline().decode("ascii", errors="ignore").strip()
+                    if reply == expected:
+                        with self._state_lock:
+                            self._theme_id = theme_id
+                        LOGGER.info("Applied theme %s", theme_id)
+                        return theme_id
+                    if reply.startswith(rejected):
+                        # the board refused it and kept its previous colours;
+                        # retrying is worthwhile, the frame may have lost a line
+                        LOGGER.debug("Theme rejected: %s", reply)
+                        break
+                    if reply.startswith("PRESS\t") or reply.startswith("ADECK_CAPS\t"):
+                        self._handle_line(reply)
+            except Exception as error:
+                LOGGER.debug("Theme write failed: %s", error)
+                return self._theme_id
+        LOGGER.warning(
+            "Theme %s was not accepted by the board; it keeps its previous colours",
+            theme_id,
+        )
+        return self._theme_id
+
+    def _push_app_icons(self, connection, buttons, txid, background="#000000"):
         with self._state_lock:
             capable = self._tft_icons
         if connection is None or not capable:
             return
         try:
-            frames = app_icon_frames(buttons, txid)
+            frames = app_icon_frames(buttons, txid, background)
         except Exception as error:
             LOGGER.debug("TFT app icons skipped: %s", error)
             return
-        accepted = 0
+        missing = []
         for index, frame in frames:
+            if not self._send_icon(connection, index, frame, txid):
+                missing.append(index)
+        if missing:
+            LOGGER.warning(
+                "TFT icon(s) never accepted for key(s) %s in transaction %s",
+                ", ".join(str(index + 1) for index in missing),
+                txid,
+            )
+        elif frames:
+            LOGGER.info(
+                "Pushed %s TFT app icon(s) for transaction %s", len(frames), txid
+            )
+
+    def _send_icon(self, connection, index, frame, txid):
+        """Send one 32x32 icon, retrying the whole frame.
+
+        The board has a 256 byte serial receive buffer and has to keep reading
+        it while it paints, so a burst of icon rows can lose some. That is a
+        retry, not a failure - and the board answers CFG_ICON_ERR when it knows
+        rows went missing, so a retry does not have to wait out the timeout.
+        """
+        expected = f"CFG_ICON_OK\t{txid}\t{index}"
+        rejected = f"CFG_ICON_ERR\t{txid}\t{index}\t"
+        lines = [line for line in frame.split(b"\n") if line]
+        for attempt in range(1, _ICON_ATTEMPTS + 1):
+            if self._stop.is_set():
+                return False
             try:
-                for line in frame.split(b"\n"):
-                    if not line:
-                        continue
-                    connection.write(line + b"\n")
+                for start in range(0, len(lines), _ICON_ROWS_PER_CHUNK):
+                    chunk = lines[start : start + _ICON_ROWS_PER_CHUNK]
+                    connection.write(b"\n".join(chunk) + b"\n")
                     connection.flush()
-                    time.sleep(0.004)
-                expected = f"CFG_ICON_OK\t{txid}\t{index}"
-                deadline = time.monotonic() + 1.2
+                    time.sleep(_ICON_CHUNK_DELAY)
+                deadline = time.monotonic() + _ICON_ACK_TIMEOUT
                 while time.monotonic() < deadline and not self._stop.is_set():
                     reply = connection.readline().decode("ascii", errors="ignore").strip()
                     if reply == expected:
-                        accepted += 1
-                        LOGGER.info("TFT icon accepted for key %s", index + 1)
+                        if attempt > 1:
+                            LOGGER.info(
+                                "TFT icon accepted for key %s (attempt %s)",
+                                index + 1,
+                                attempt,
+                            )
+                        else:
+                            LOGGER.info("TFT icon accepted for key %s", index + 1)
+                        return True
+                    if reply.startswith(rejected):
+                        # the board saw rows go missing. retry now instead of
+                        # waiting out the timeout. an error for any other key is
+                        # stale - it belongs to an earlier attempt
+                        LOGGER.debug(
+                            "TFT icon rejected for key %s: %s", index + 1, reply
+                        )
                         break
                     if reply.startswith("PRESS\t") or reply == "ADECK_CAPS\tICON":
                         self._handle_line(reply)
                     elif reply.startswith("CFG_ERR\t"):
-                        LOGGER.debug("TFT icon rejected for key %s: %s", index + 1, reply)
-                        break
+                        LOGGER.debug("Device error during icon push: %s", reply)
             except Exception as error:
                 LOGGER.debug("TFT app icon write failed: %s", error)
-                return
-        if frames:
-            LOGGER.info(
-                "Pushed %s/%s TFT app icon(s) for transaction %s",
-                accepted,
-                len(frames),
-                txid,
-            )
+                return False
+        return False
 
     def _complete_request(self, request):
         try:
@@ -2412,6 +2934,11 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 200,
                 {"ok": True, "has_config": config is not None, "config": config},
             )
+            return
+        if path == "/api/themes":
+            if not self._api_allowed():
+                return
+            self._json(200, theme_payload())
             return
         if path == "/api/apps":
             if not self._api_allowed():

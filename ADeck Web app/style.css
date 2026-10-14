@@ -29,6 +29,11 @@
   --code-bg: #0a0a0a;
   --code-fg: #ecebe6;
   --toast-shadow: #000000;
+  --active-bg: #e8e7e2;
+  --active-fg: #000000;
+  --hover-bg: #ecebe6;
+  --btn-solid-bg: #111111;
+  --btn-solid-fg: #f2f1ee;
   --font: "Doto", "Consolas", monospace;
   --mono: var(--font);
   --rond: 100;
@@ -402,8 +407,11 @@ select:focus:not(:focus-visible) { outline: none; }
   font-size: 12px; letter-spacing: 0.12em; color: #e0e0da; flex-shrink: 0; font-weight: 800;
 }
 
+/* Matches the TFT: 3 columns × 2 rows (keys 0–2 top, 3–5 bottom). */
 .grid {
-  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-rows: repeat(3, minmax(0, 1fr));
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
   gap: 8px; width: 100%; flex: 1; min-height: 0; overflow: hidden;
 }
 .slot {
@@ -735,6 +743,8 @@ select:focus:not(:focus-visible) { outline: none; }
 #appDialog { z-index: 55; }
 .modal[hidden] { display: none; }
 .modal-panel { background: var(--bg); border: 1px solid var(--line); width: min(860px, 100%); max-height: 80vh; display: flex; flex-direction: column; }
+.modal-panel-wide { width: min(1080px, 100%); }
+.modal-title-block { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .modal-head {
   border-bottom: 1px solid var(--line); padding: 10px 14px; display: flex;
   align-items: center; justify-content: space-between; gap: 12px; background: var(--bg-2); flex-wrap: wrap;
@@ -936,6 +946,123 @@ select:focus:not(:focus-visible) { outline: none; }
 .sys-busy { opacity: 0.6; pointer-events: none; }
 
 #offlineOverlay { z-index: 65; }
+
+/* --- deck theme window --------------------------------------------------- */
+/* Everything here reads the same tokens the rest of the sheet does, so the
+   window is itself wearing whichever theme is selected. Nothing is hardcoded. */
+
+.theme-btn { display: flex; align-items: center; justify-content: center; gap: 8px; }
+.theme-btn-name {
+  color: var(--accent);
+  letter-spacing: 0.12em;
+}
+
+#themeModal { z-index: 62; }
+.theme-panel { width: min(940px, 96vw); }
+
+.theme-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 0;
+  min-height: 0;
+  flex: 1;
+}
+
+.theme-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  border-right: 1px solid var(--line);
+  overflow: auto;
+  max-height: 60vh;
+}
+
+.theme-card {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  align-items: stretch;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--line);
+  border-left: 3px solid transparent;
+  padding: 14px 16px;
+  cursor: pointer;
+  color: var(--ink);
+  font: inherit;
+}
+.theme-card:hover { background: var(--bg-2); }
+.theme-card.is-selected {
+  border-left-color: var(--accent);
+  background: var(--bg-2);
+}
+
+.theme-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.theme-card-name { font-size: 18px; font-weight: 900; letter-spacing: 0.1em; text-transform: uppercase; }
+.theme-card-tag { font-size: 12px; letter-spacing: 0.14em; color: var(--accent); min-height: 1em; }
+.theme-card-desc { font-size: 13px; font-weight: 800; letter-spacing: 0.03em; opacity: 0.75; line-height: 1.4; }
+.theme-card-strip { display: flex; height: 10px; border: 1px solid var(--line); }
+.theme-card-strip i { flex: 1; }
+
+.theme-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 16px;
+  min-width: 0;
+}
+.theme-preview-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; font-size: 12px; letter-spacing: 0.12em; }
+
+/* the miniature panel. its own colours come from the theme, not the app */
+.theme-tft {
+  background: #000000;
+  border: 1px solid var(--tft-line, var(--line));
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  aspect-ratio: 4 / 3;
+}
+.theme-tft-chrome { display: flex; align-items: center; justify-content: space-between; font-size: 11px; letter-spacing: 0.16em; opacity: 0.55; color: #ffffff; }
+.theme-tft-key { opacity: 0.9; }
+.theme-tft-grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  gap: 6px;
+  min-height: 0;
+}
+.theme-tft-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 0;
+}
+.theme-tft-icon {
+  width: 44%;
+  aspect-ratio: 1;
+  border: 1px solid transparent;
+  display: block;
+}
+.theme-tft-label {
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theme-foot { justify-content: space-between; align-items: center; gap: 12px; }
+
+@media (max-width: 900px) {
+  .theme-body { grid-template-columns: 1fr; }
+  .theme-list { border-right: none; border-bottom: 1px solid var(--line); max-height: 40vh; }
+}
 
 @media (max-width: 1100px) {
   .brand-sub { display: none; }

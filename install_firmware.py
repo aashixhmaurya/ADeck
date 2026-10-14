@@ -650,7 +650,6 @@ def ping_firmware(port: str) -> bool:
     connection.baudrate = 115200
     connection.timeout = 0.25
     connection.write_timeout = 1
-    connection.dtr = False
     try:
         connection.open()
         time.sleep(1.7)
