@@ -135,13 +135,6 @@
           </div>
           <span id="slotInfoState" class="slot-state-badge mono">—</span>
         </div>
-        <div class="slot-info-row">
-          <span class="mono muted">COLOR</span>
-          <span id="slotInfoColor" class="mono color-preview-wrap">
-            <span id="slotColorPreview" class="color-preview" aria-hidden="true"></span>
-            <span id="slotColorHex">—</span>
-          </span>
-        </div>
       </div>
 
       <form id="editorForm" class="editor" autocomplete="off">
@@ -170,16 +163,14 @@
           <span id="commandError" class="field-error mono" hidden role="alert"></span>
         </div>
 
-        <div class="field">
-          <div class="color-field-head">
-            <span class="field-label">COLOR</span>
-            <div class="custom-color-wrap">
-              <span class="custom-color-label">CUSTOM</span>
-              <button type="button" id="customColorBtn" class="custom-color-btn" aria-label="Custom color" title="Custom color"></button>
-              <input type="color" id="customColorInput" class="custom-color-input" value="#255a8c" tabindex="-1" aria-hidden="true" />
-            </div>
-          </div>
-          <div class="swatch-row" id="swatchRow" role="group" aria-label="Color swatches"></div>
+        <div class="field bg-color-field">
+          <button type="button" id="customColorBtn" class="bg-color-pick" aria-label="Pick display background colour" title="Pick display background colour">
+            <span id="bgColorSwatch" class="bg-color-swatch" aria-hidden="true"></span>
+            <span class="bg-color-label mono">BACKGROUND COLOUR</span>
+            <span class="bg-color-action mono">PICK</span>
+          </button>
+          <input type="color" id="customColorInput" class="custom-color-input" value="#080d0e" tabindex="-1" aria-hidden="true" />
+          <span class="field-hint mono muted">Fills the empty space behind icons on the whole device screen</span>
         </div>
 
         <div class="editor-foot">

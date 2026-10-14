@@ -565,9 +565,19 @@ def normalize_config(raw):
         raw_theme = raw_profile.get("theme")
         theme = theme_for(raw_theme if isinstance(raw_theme, str) else "")["id"]
 
+        # Optional per-profile display background (behind icons on the TFT).
+        raw_background = raw_profile.get("background")
+        if raw_background is None or raw_background == "":
+            background = theme_for(theme)["tft"]["background"].lower()
+        elif isinstance(raw_background, str) and COLOR_PATTERN.fullmatch(raw_background):
+            background = raw_background.lower()
+        else:
+            raise ValueError(f'Profile "{name}" background must be #RRGGBB')
+
         profile = {
             "name": name,
             "theme": theme,
+            "background": background,
             "buttons": [slots[index] for index in range(SLOT_COUNT)],
         }
         if profile_id is not None:
@@ -631,6 +641,21 @@ def active_theme_id(config):
     return theme_for(profile.get("theme"))["id"]
 
 
+def active_background(config):
+    """Display background for the active profile (custom hex or theme default)."""
+    if not config:
+        return theme_background(DEFAULT_THEME_ID)
+    try:
+        active = config["active_profile"]
+        profile = next(item for item in config["profiles"] if item["name"] == active)
+    except (KeyError, TypeError, StopIteration):
+        return theme_background(DEFAULT_THEME_ID)
+    background = profile.get("background")
+    if isinstance(background, str) and COLOR_PATTERN.fullmatch(background):
+        return background.lower()
+    return theme_background(theme_for(profile.get("theme"))["id"])
+
+
 def _crc16_next(crc, value):
     crc ^= value << 8
     for _ in range(8):
@@ -668,14 +693,29 @@ def config_frame(config, txid):
     return ("\n".join(lines) + "\n").encode("ascii")
 
 
-def theme_values(theme_id):
-    """The panel colours for a theme, as RGB triples in the order the board wants."""
+def theme_values(theme_id, background=None):
+    """The panel colours for a theme, as RGB triples in the order the board wants.
+
+    background, when a valid #RRGGBB, replaces the theme's display background only.
+    """
     tft = theme_for(theme_id)["tft"]
-    return [_hex_rgb_tuple(tft[key]) for key in TFT_THEME_KEYS]
+    values = []
+    for key in TFT_THEME_KEYS:
+        if (
+            key == "background"
+            and isinstance(background, str)
+            and COLOR_PATTERN.fullmatch(background)
+        ):
+            values.append(_hex_rgb_tuple(background))
+        else:
+            values.append(_hex_rgb_tuple(tft[key]))
+    return values
 
 
-def theme_background(theme_id):
+def theme_background(theme_id, background=None):
     """What the panel paints behind everything, so icons can be blended onto it."""
+    if isinstance(background, str) and COLOR_PATTERN.fullmatch(background):
+        return background.lower()
     return theme_for(theme_id)["tft"]["background"]
 
 
@@ -687,14 +727,14 @@ def theme_crc(values):
     return crc
 
 
-def theme_frame(theme_id, txid):
+def theme_frame(theme_id, txid, background=None):
     """The theme half of a sync. Sent after the slots and before the icons.
 
     Its own transaction rather than part of CFG_BEGIN: a theme can change on
     its own, and a rejected theme must not be able to take the slot config down
     with it.
     """
-    values = theme_values(theme_id)
+    values = theme_values(theme_id, background)
     lines = [f"CFG_THEME_BEGIN\t{txid}\t{len(values)}"]
     for index, (red, green, blue) in enumerate(values):
         lines.append(
@@ -2004,6 +2044,49 @@ def app_icon_rgb565(command, background="#000000"):
     )
 
 
+def _dominant_color_from_rgba(rgba, width, height):
+    """Pick the majority opaque colour from an RGBA buffer (#rrggbb).
+
+    Near-black / near-white / transparent pixels are skipped so logos like Brave
+    resolve to their brand colour instead of the canvas.
+    """
+    expected = width * height * 4
+    if not rgba or len(rgba) < expected:
+        return "#c5c5c3"
+    counts = {}
+    for pixel in range(width * height):
+        offset = pixel * 4
+        alpha = rgba[offset + 3]
+        if alpha < 64:
+            continue
+        red, green, blue = rgba[offset], rgba[offset + 1], rgba[offset + 2]
+        if red < 24 and green < 24 and blue < 24:
+            continue
+        if red > 235 and green > 235 and blue > 235:
+            continue
+        # Quantize a little so anti-aliased edges collapse to one bucket.
+        key = (red & 0xF8, green & 0xF8, blue & 0xF8)
+        counts[key] = counts.get(key, 0) + 1
+    if not counts:
+        return "#c5c5c3"
+    red, green, blue = max(counts.items(), key=lambda item: item[1])[0]
+    return f"#{red:02x}{green:02x}{blue:02x}"
+
+
+def dominant_icon_color(command):
+    """Majority colour of an app icon for a command, or ash when unknown."""
+    fallback = "#c5c5c3"
+    if str(command or "").strip() == "" or os.name != "nt":
+        return fallback
+    source = _icon_source_for_command(command)
+    if not source:
+        return fallback
+    rgba = _extract_icon_rgba(source, _TFT_ICON_SIZE)
+    if len(rgba) != _TFT_ICON_SIZE * _TFT_ICON_SIZE * 4:
+        return fallback
+    return _dominant_color_from_rgba(rgba, _TFT_ICON_SIZE, _TFT_ICON_SIZE)
+
+
 def slot_icon_frame(index, button, txid, background="#000000"):
     if not isinstance(button, dict):
         return b""
@@ -2512,14 +2595,22 @@ class ADeckDevice:
                 # theme's background, so the theme has to be in place before the
                 # pixels that sit on it are chosen
                 wanted = active_theme_id(config)
-                in_force = self._push_theme(connection, wanted, txid)
+                background = active_background(config)
+                in_force = self._push_theme(
+                    connection, wanted, txid, background=background
+                )
                 # no theme in force means a board that still paints black - the
                 # old firmware - so the icons go back to being blended on black
+                blend = (
+                    theme_background(in_force, background)
+                    if in_force
+                    else "#000000"
+                )
                 self._push_app_icons(
                     connection,
                     active_buttons(config),
                     txid,
-                    theme_background(in_force) if in_force else "#000000",
+                    blend,
                 )
                 return
             if line.startswith(f"CFG_ERR\t{txid}\t"):
@@ -2533,7 +2624,7 @@ class ADeckDevice:
                 self._handle_line(line)
         raise TimeoutError("ADeck did not acknowledge the configuration")
 
-    def _push_theme(self, connection, theme_id, txid):
+    def _push_theme(self, connection, theme_id, txid, background=None):
         """Send the workspace theme, retrying the frame like the icons do.
 
         Returns the theme the panel is now wearing, or None when there is none
@@ -2548,7 +2639,7 @@ class ADeckDevice:
             return None
         expected = f"CFG_THEME_OK\t{txid}"
         rejected = f"CFG_THEME_ERR\t{txid}\t"
-        frame = theme_frame(theme_id, txid)
+        frame = theme_frame(theme_id, txid, background=background)
         for attempt in range(1, _THEME_ATTEMPTS + 1):
             if self._stop.is_set():
                 return self._theme_id
@@ -2964,6 +3055,21 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 body = _placeholder_icon_png()
             cacheable = bool(command) and body != _placeholder_icon_png()
             self._png(body, cacheable=cacheable)
+            return
+
+        if path == "/api/app-color":
+            if not self._api_allowed():
+                return
+            query = parse_qs(urlparse(self.path).query)
+            command = (query.get("command") or [""])[0]
+            if len(command) > COMMAND_MAX:
+                command = ""
+            try:
+                color = dominant_icon_color(command)
+            except Exception as error:
+                LOGGER.debug("App colour request failed: %s", error)
+                color = "#c5c5c3"
+            self._json(200, {"ok": True, "command": command, "color": color})
             return
 
         if path == "/api/system":

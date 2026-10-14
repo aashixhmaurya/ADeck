@@ -12,15 +12,9 @@
   const LEGACY_STORAGE_KEY = "macropad.cfg.v1";
   const SETTINGS_KEY = "adeck.settings.v1";
 
-  const COLORS = [
-    { name: "ash", hex: "#c5c5c3" },
-    { name: "steel", hex: "#255a8c" },
-    { name: "teal", hex: "#1f6b52" },
-    { name: "signal", hex: "#b42318" },
-    { name: "slate", hex: "#2c3238" },
-    { name: "ink", hex: "#0a0a0a" },
-  ];
-  const DEFAULT_COLOR = COLORS[0].hex;
+  const DEFAULT_COLOR = "#c5c5c3"; // empty / non-app key fill in the preview
+  // Fallback display background when a profile has no custom value yet.
+  const DEFAULT_BACKGROUND = "#080d0e";
 
   const COMMON_COMMANDS = [
     { name: "git status", command: "git status", label: "GIT", kind: "command" },
@@ -49,10 +43,6 @@
     if (/^#[0-9a-f]{6}$/.test(raw)) return raw;
     if (/^[0-9a-f]{6}$/.test(raw)) return "#" + raw;
     return DEFAULT_COLOR;
-  }
-
-  function isPresetColor(hex) {
-    return COLORS.some((c) => c.hex === hex);
   }
 
   // Arrow keys on the 3×2 preview (same layout as the TFT).
@@ -121,6 +111,7 @@
       id: newProfileId(),
       name: String(name || "Untitled").slice(0, PROFILE_NAME_MAX),
       theme: DEFAULT_DECK_THEME,
+      background: DEFAULT_BACKGROUND,
       slots: Array.from({ length: SLOTS_PER_PROFILE }, (_, i) => makeSlot(i)),
     };
   }
@@ -128,6 +119,7 @@
   function cloneProfile(source, newName) {
     const p = makeProfile(newName || source.name + " Copy");
     p.theme = normalizeThemeId(source.theme);
+    p.background = normalizeHex(source.background || DEFAULT_BACKGROUND);
     p.slots = source.slots.map((s, i) => ({
       index: i,
       label: String(s.label || "").slice(0, LABEL_MAX),
@@ -136,6 +128,11 @@
       color: normalizeHex(s.color),
     }));
     return p;
+  }
+
+  function profileBackground(profile) {
+    if (!profile) return DEFAULT_BACKGROUND;
+    return normalizeHex(profile.background || DEFAULT_BACKGROUND);
   }
 
   function activeProfile() {
@@ -175,10 +172,17 @@
 
   // also accepts old buttons[] exports
   function normalizeProfile(raw) {
+    const themeId = normalizeThemeId(raw.theme);
+    const theme = deckTheme(themeId);
+    const themeBg =
+      theme && theme.tft && theme.tft.background
+        ? normalizeHex(theme.tft.background)
+        : DEFAULT_BACKGROUND;
     return {
       id: raw.id || newProfileId(),
       name: String(raw.name || "Untitled").slice(0, PROFILE_NAME_MAX),
-      theme: normalizeThemeId(raw.theme),
+      theme: themeId,
+      background: raw.background ? normalizeHex(raw.background) : themeBg,
       slots: Array.from({ length: SLOTS_PER_PROFILE }, (_, i) => {
         const s = (raw.slots && raw.slots[i]) || (raw.buttons && raw.buttons[i]) || {};
         return {
@@ -212,14 +216,13 @@
     themeBtnName: $("themeBtnName"),
     buttonGrid: $("buttonGrid"),
     deviceConnBadge: $("deviceConnBadge"),
+    deviceScreen: $("deviceScreen"),
     screenActiveKey: $("screenActiveKey"),
     screenProfileName: $("screenProfileName"),
     topStateDot: $("topStateDot"),
     activeSlotTag: $("activeSlotTag"),
     slotInfoKey: $("slotInfoKey"),
     slotInfoState: $("slotInfoState"),
-    slotColorPreview: $("slotColorPreview"),
-    slotColorHex: $("slotColorHex"),
     editorForm: $("editorForm"),
     settingsForm: $("settingsForm"),
     labelInput: $("labelInput"),
@@ -235,9 +238,9 @@
     appPickerStatus: $("appPickerStatus"),
     appPickerCommands: $("appPickerCommands"),
     appPickerApps: $("appPickerApps"),
-    swatchRow: $("swatchRow"),
     customColorBtn: $("customColorBtn"),
     customColorInput: $("customColorInput"),
+    bgColorSwatch: $("bgColorSwatch"),
     clearSlotBtn: $("clearSlotBtn"),
     statusLine: $("statusLine"),
     clock: $("clock"),
@@ -512,11 +515,6 @@
       return "path";
     }
     return "command";
-  }
-
-  function colorName(hex) {
-    const found = COLORS.find((c) => c.hex === hex);
-    return found ? found.name.toUpperCase() : "CUSTOM";
   }
 
   function pickerLabel(name, fallback) {
@@ -1006,6 +1004,10 @@
     if (els.screenProfileName) {
       els.screenProfileName.textContent = p ? p.name.toUpperCase().slice(0, 16) : "—";
     }
+    // Preview screen behind the keys follows the profile display background.
+    if (els.deviceScreen) {
+      els.deviceScreen.style.background = profileBackground(p);
+    }
   }
 
   function renderProfiles() {
@@ -1108,50 +1110,53 @@
     });
   }
 
-  function renderColorOptions() {
-    els.swatchRow.innerHTML = "";
-
-    COLORS.forEach((c) => {
-      const sw = document.createElement("button");
-      sw.type = "button";
-      sw.className = "swatch";
-      sw.title = c.name + " " + c.hex;
-      sw.setAttribute("aria-label", "Color " + c.name);
-      sw.dataset.hex = c.hex;
-      sw.innerHTML =
-        '<span class="swatch-chip" style="background:' + c.hex + '"></span>' +
-        '<span class="swatch-name">' + escapeHtml(c.name) + "</span>" +
-        '<span class="swatch-hex">' + c.hex + "</span>";
-      sw.addEventListener("click", () => applyColor(c.hex));
-      els.swatchRow.appendChild(sw);
-    });
-  }
-
-  function highlightSwatch(hex) {
-    els.swatchRow.querySelectorAll(".swatch").forEach((n) => {
-      const on = n.dataset.hex === hex;
-      n.classList.toggle("selected", on);
-      n.setAttribute("aria-pressed", on ? "true" : "false");
-    });
-    const custom = !!hex && !isPresetColor(hex);
-    els.customColorBtn.classList.toggle("is-custom", custom);
-    if (hex) {
-      els.customColorBtn.style.setProperty("--picked-color", hex);
-      els.customColorInput.value = hex;
-    } else {
-      els.customColorBtn.style.removeProperty("--picked-color");
+  function updateBackgroundPicker(hex) {
+    const value = hex ? normalizeHex(hex) : DEFAULT_BACKGROUND;
+    if (els.customColorBtn) {
+      els.customColorBtn.style.setProperty("--picked-color", value);
+    }
+    if (els.bgColorSwatch) {
+      els.bgColorSwatch.style.background = value;
+    }
+    if (els.customColorInput) {
+      els.customColorInput.value = value;
     }
   }
 
+  // Picker sets the profile display background (whole TFT), not per-key colour.
   function applyColor(hex) {
-    const s = activeSlot();
-    if (!s) return;
-    s.color = normalizeHex(hex);
-    highlightSwatch(s.color);
+    const p = activeProfile();
+    if (!p) return;
+    p.background = normalizeHex(hex);
+    updateBackgroundPicker(p.background);
     renderGrid();
     renderEditor();
+    renderDeviceMeta();
     markDirty(true);
     persistProfiles();
+  }
+
+  async function refreshSlotIconColor(slot) {
+    if (!slot) return;
+    const command = String(slot.command || "").trim();
+    if (!command || slot.kind !== "app") {
+      if (!command) slot.color = DEFAULT_COLOR;
+      return;
+    }
+    try {
+      const res = await fetchWithTimeout(
+        "/api/app-color?command=" + encodeURIComponent(command),
+        {},
+        6000
+      );
+      if (!res || !res.ok) return;
+      const data = await res.json();
+      if (data && data.color) {
+        slot.color = normalizeHex(data.color);
+      }
+    } catch (_) {
+      /* keep previous colour if the bridge is offline */
+    }
   }
 
   function renderEditor() {
@@ -1163,10 +1168,8 @@
     els.commandInput.disabled = disabled;
     if (els.appPickerBtn) els.appPickerBtn.disabled = disabled;
     els.clearSlotBtn.disabled = disabled;
-    els.customColorBtn.disabled = disabled;
-    els.swatchRow.querySelectorAll(".swatch").forEach((sw) => {
-      sw.disabled = disabled;
-    });
+    // Background colour is profile-wide — available whenever a profile is open.
+    if (els.customColorBtn) els.customColorBtn.disabled = !p;
     els.editorForm.classList.toggle("is-disabled", disabled);
 
     if (!s || !p) {
@@ -1174,15 +1177,13 @@
       els.slotInfoKey.textContent = "—";
       els.slotInfoState.textContent = "—";
       els.slotInfoState.className = "slot-state-badge mono";
-      els.slotColorHex.textContent = "—";
-      els.slotColorPreview.style.background = "transparent";
       els.labelInput.value = "";
       els.commandInput.value = "";
       els.labelCount.textContent = "0";
       els.commandCount.textContent = "0";
       els.commandError.hidden = true;
       updateCommandKindUI("", "");
-      highlightSwatch(null);
+      updateBackgroundPicker(p ? profileBackground(p) : null);
       return;
     }
 
@@ -1192,8 +1193,6 @@
     els.slotInfoState.textContent = isEmpty ? "EMPTY" : "CONFIGURED";
     els.slotInfoState.className =
       "slot-state-badge mono " + (isEmpty ? "is-empty" : "is-configured");
-    els.slotColorHex.textContent = colorName(s.color) + "  " + s.color;
-    els.slotColorPreview.style.background = s.color;
     const label = String(s.label || "").slice(0, LABEL_MAX);
     const command = String(s.command || "").slice(0, COMMAND_MAX);
     if (label !== s.label || command !== s.command) {
@@ -1210,7 +1209,7 @@
     els.commandError.hidden = v.ok;
     els.commandError.textContent = v.message;
     els.commandInput.classList.toggle("invalid", !v.ok);
-    highlightSwatch(s.color);
+    updateBackgroundPicker(profileBackground(p));
     updateStatusBar();
   }
 
@@ -1374,6 +1373,7 @@
       profile: {
         name: p.name,
         theme: normalizeThemeId(p.theme),
+        background: profileBackground(p),
         slots: p.slots.map((s) => ({
           index: s.index,
           label: s.label,
@@ -1480,6 +1480,7 @@
         id: p.id,
         name: p.name,
         theme: normalizeThemeId(p.theme),
+        background: profileBackground(p),
         buttons: p.slots.map((s) => {
           const button = {
             key: s.index + 1,
@@ -1571,10 +1572,13 @@
   function renderThemeTft(theme) {
     if (!els.themeTft) return;
     const tft = theme.tft || {};
-    els.themeTft.style.background = tft.background || "#000000";
+    const profile = activeProfile();
+    // Preview the profile's display background, not only the named theme default.
+    els.themeTft.style.background = profile
+      ? profileBackground(profile)
+      : tft.background || "#000000";
     els.themeTft.style.setProperty("--tft-line", tft.accent || "#888888");
 
-    const profile = activeProfile();
     const slots = profile ? profile.slots : [];
     els.themeTftGrid.innerHTML = "";
 
@@ -2683,13 +2687,18 @@
     return installedAppsPromise;
   }
 
-  function applyPickerItem(item) {
+  async function applyPickerItem(item) {
     const s = activeSlot();
     if (!s || !item || !item.command) return;
     s.command = String(item.command).slice(0, COMMAND_MAX);
     s.kind = item.kind === "app" ? "app" : "command";
     const nextLabel = item.label || pickerLabel(item.name);
     if (nextLabel) s.label = nextLabel.slice(0, LABEL_MAX);
+    if (s.kind === "app") {
+      await refreshSlotIconColor(s);
+    } else {
+      s.color = DEFAULT_COLOR;
+    }
     closeAppPicker();
     renderEditor();
     renderGrid();
@@ -2764,6 +2773,22 @@
       els.commandError.textContent = v.message;
       els.commandInput.classList.toggle("invalid", !v.ok);
       afterSlotFieldEdit();
+    });
+    // On commit, pull majority icon colour for app/exe paths.
+    els.commandInput.addEventListener("change", async () => {
+      const s = activeSlot();
+      if (!s) return;
+      const kind = detectCommandKind(s.command);
+      if (s.command && (kind === "path" || /\.(exe|lnk|app)$/i.test(s.command))) {
+        s.kind = "app";
+        await refreshSlotIconColor(s);
+      } else if (!s.command) {
+        s.color = DEFAULT_COLOR;
+      }
+      updateCommandKindUI(s.command, s.kind);
+      renderEditor();
+      renderGrid();
+      persistProfiles();
     });
 
     els.customColorBtn.addEventListener("click", () => {
@@ -2908,7 +2933,6 @@
     state.device.port = "NOT CONNECTED";
     state.device.firmware = "—";
     applyTheme(state.settings.theme || "light", false);
-    renderColorOptions();
     renderAll();
     renderAbout();
     markDirty(false);

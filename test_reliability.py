@@ -1137,6 +1137,71 @@ class ReliabilityTests(unittest.TestCase):
         self.assertIn(".theme-card", style)
         self.assertIn(".theme-tft", style)
 
+    def test_profile_background_defaults_and_override(self):
+        normalized = deck.normalize_config(sample_config())
+        classic_bg = deck.THEMES["adeck-classic"]["tft"]["background"].lower()
+        self.assertEqual(normalized["profiles"][0]["background"], classic_bg)
+        self.assertEqual(deck.active_background(normalized), classic_bg)
+
+        config = sample_config()
+        config["profiles"][0]["theme"] = "cyber"
+        config["profiles"][0]["background"] = "#112233"
+        normalized = deck.normalize_config(config)
+        self.assertEqual(normalized["profiles"][0]["background"], "#112233")
+        self.assertEqual(deck.active_background(normalized), "#112233")
+        self.assertEqual(deck.theme_background("cyber", "#112233"), "#112233")
+
+        values = deck.theme_values("cyber", background="#112233")
+        self.assertEqual(values[0], (0x11, 0x22, 0x33))
+        # other theme colours stay from the named theme
+        self.assertEqual(
+            values[1], deck._hex_rgb_tuple(deck.THEMES["cyber"]["tft"]["text"])
+        )
+
+        frame = deck.theme_frame("cyber", "bg1", background="#112233").decode("ascii")
+        self.assertIn("CFG_THEME_VALUE\tbg1\t0\t#112233", frame)
+
+        with self.assertRaises(ValueError):
+            bad = sample_config()
+            bad["profiles"][0]["background"] = "not-a-color"
+            deck.normalize_config(bad)
+
+    def test_dominant_color_from_rgba_skips_extremes(self):
+        # mostly transparent / black / white with one orange brand pixel cluster
+        width = height = 4
+        rgba = bytearray(width * height * 4)
+        for i in range(width * height):
+            offset = i * 4
+            if i < 4:
+                rgba[offset : offset + 4] = bytes([0, 0, 0, 0])
+            elif i < 8:
+                rgba[offset : offset + 4] = bytes([0, 0, 0, 255])
+            elif i < 12:
+                rgba[offset : offset + 4] = bytes([255, 255, 255, 255])
+            else:
+                rgba[offset : offset + 4] = bytes([0xFB, 0x54, 0x20, 255])
+        color = deck._dominant_color_from_rgba(bytes(rgba), width, height)
+        self.assertEqual(color, "#f85020")
+        self.assertEqual(deck.dominant_icon_color(""), "#c5c5c3")
+
+    def test_web_background_colour_layer_is_wired_up(self):
+        script = (deck.WEB_DIR / "script.js").read_text(encoding="utf-8")
+        page = (deck.WEB_DIR / "index.html").read_text(encoding="utf-8")
+        style = (deck.WEB_DIR / "style.css").read_text(encoding="utf-8")
+        self.assertIn("BACKGROUND COLOUR", page)
+        self.assertIn("bg-color-label", page)
+        self.assertNotIn("ICON COLOUR", page)
+        self.assertIn("bg-color-pick", page)
+        self.assertNotIn("id=\"swatchRow\"", page)
+        self.assertNotIn("bgColorHex", page)
+        self.assertNotIn(">DISPLAY<", page)
+        self.assertIn("profileBackground", script)
+        self.assertIn("updateBackgroundPicker", script)
+        self.assertIn("/api/app-color", script)
+        self.assertIn("refreshSlotIconColor", script)
+        self.assertIn(".bg-color-pick", style)
+        self.assertNotIn(".swatch-row", style)
+
 
 if __name__ == "__main__":
     unittest.main()
