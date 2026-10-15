@@ -1184,6 +1184,15 @@ class ReliabilityTests(unittest.TestCase):
         self.assertEqual(color, "#f85020")
         self.assertEqual(deck.dominant_icon_color(""), "#c5c5c3")
 
+    def test_carbon_mist_starfield_bg_effect(self):
+        self.assertEqual(deck.theme_bg_effect("adeck-classic"), "stars")
+        self.assertEqual(deck.theme_bg_effect("cyber"), "")
+        self.assertEqual(deck.theme_bg_effect("nope"), "stars")  # default theme
+        classic = deck.theme_frame("adeck-classic", "abc123").decode("ascii")
+        self.assertTrue(classic.startswith("CFG_THEME_BEGIN\tabc123\t7\tstars\n"))
+        cyber = deck.theme_frame("cyber", "abc123").decode("ascii")
+        self.assertTrue(cyber.startswith("CFG_THEME_BEGIN\tabc123\t7\n"))
+
     def test_web_background_colour_layer_is_wired_up(self):
         script = (deck.WEB_DIR / "script.js").read_text(encoding="utf-8")
         page = (deck.WEB_DIR / "index.html").read_text(encoding="utf-8")

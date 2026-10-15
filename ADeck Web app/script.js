@@ -254,7 +254,6 @@
     themeList: $("themeList"),
     themeTft: $("themeTft"),
     themeTftGrid: $("themeTftGrid"),
-    themePreviewId: $("themePreviewId"),
     themeStatus: $("themeStatus"),
     themeApplyBtn: $("themeApplyBtn"),
     themeCancelBtn: $("themeCancelBtn"),
@@ -557,8 +556,8 @@
   }
 
   // --- deck themes (palette lives in deck.py; we just fetch + apply) -------
-  const DEFAULT_DECK_THEME = "adeck-classic"; // id kept for old saves; UI name is Mist
-  const THEMES_CACHE_KEY = "adeck.themes.v1";
+  const DEFAULT_DECK_THEME = "adeck-classic"; // id kept for old saves; UI name is Space
+  const THEMES_CACHE_KEY = "adeck.themes.v2";
 
   let themeRegistry = null;
   let appliedThemeVars = [];
@@ -589,7 +588,7 @@
 
   function deckThemeName(themeId) {
     const theme = deckTheme(themeId);
-    return theme ? theme.name : "Carbon Mist";
+    return theme ? theme.name : "Space";
   }
 
   function deckThemeShort(themeId) {
@@ -1518,16 +1517,6 @@
   // --- theme picker (colours always come from the theme itself) ------------
   const themeModal = { open: false, selectedId: null, savedId: null, previousFocus: null };
 
-  const THEME_STRIP_KEYS = ["--bg", "--bg-3", "--ink", "--accent", "--sage"];
-
-  function themeStripColors(theme) {
-    const mode = state.settings.theme === "dark" ? "dark" : "light";
-    const palette = (theme.web && (theme.web[mode] || theme.web.light)) || {};
-    const picked = THEME_STRIP_KEYS.map((key) => palette[key]).filter(Boolean);
-    if (picked.length) return picked;
-    return Object.values(theme.tft || {}).slice(0, 5); // fallback: panel colours
-  }
-
   function renderThemeCards() {
     if (!els.themeList) return;
     els.themeList.innerHTML = "";
@@ -1551,17 +1540,12 @@
       card.setAttribute("role", "radio");
       card.setAttribute("aria-checked", selected ? "true" : "false");
 
-      const strip = themeStripColors(theme)
-        .map((hex) => '<i style="background:' + escapeHtml(hex) + '"></i>')
-        .join("");
-
       card.innerHTML =
         '<span class="theme-card-head">' +
         '<span class="theme-card-name">' + escapeHtml(theme.name) + "</span>" +
         '<span class="theme-card-tag mono">' + (saved ? "IN USE" : "") + "</span>" +
         "</span>" +
-        '<span class="theme-card-desc">' + escapeHtml(theme.description) + "</span>" +
-        '<span class="theme-card-strip" aria-hidden="true">' + strip + "</span>";
+        '<span class="theme-card-desc">' + escapeHtml(theme.description) + "</span>";
 
       card.addEventListener("click", () => selectThemePreview(theme.id));
       els.themeList.appendChild(card);
@@ -1573,11 +1557,40 @@
     if (!els.themeTft) return;
     const tft = theme.tft || {};
     const profile = activeProfile();
-    // Preview the profile's display background, not only the named theme default.
-    els.themeTft.style.background = profile
-      ? profileBackground(profile)
-      : tft.background || "#000000";
+    // Preview the theme's display background (starfield themes keep the theme fill).
+    const screenBg =
+      String(theme.bgEffect || "").toLowerCase() === "stars"
+        ? tft.background || "#080d0e"
+        : profile
+          ? profileBackground(profile)
+          : tft.background || "#000000";
+    els.themeTft.style.background = screenBg;
     els.themeTft.style.setProperty("--tft-line", tft.accent || "#888888");
+
+    // Clear previous star layer (if any) without touching the chrome/grid markup.
+    els.themeTft.querySelectorAll(".theme-tft-stars").forEach((node) => node.remove());
+
+    if (String(theme.bgEffect || "").toLowerCase() === "stars") {
+      const layer = document.createElement("div");
+      layer.className = "theme-tft-stars";
+      layer.setAttribute("aria-hidden", "true");
+      // Fixed gutter-ish spots so the preview reads like the real Space TFT.
+      const dots = [
+        [8, 10], [22, 6], [48, 12], [72, 8], [90, 14],
+        [12, 48], [38, 52], [62, 46], [88, 50],
+        [6, 88], [28, 92], [54, 86], [78, 90], [94, 84],
+        [18, 28], [82, 32], [50, 70], [34, 74],
+        [42, 18], [66, 28], [14, 64], [86, 66], [58, 96],
+      ];
+      dots.forEach(([x, y], index) => {
+        const dot = document.createElement("i");
+        dot.style.left = x + "%";
+        dot.style.top = y + "%";
+        dot.style.animationDelay = (index * 0.35) + "s";
+        layer.appendChild(dot);
+      });
+      els.themeTft.insertBefore(layer, els.themeTftGrid || els.themeTft.firstChild);
+    }
 
     const slots = profile ? profile.slots : [];
     els.themeTftGrid.innerHTML = "";
@@ -1611,7 +1624,6 @@
   function renderThemePreview() {
     const theme = deckTheme(themeModal.selectedId) || deckTheme(defaultDeckThemeId());
     if (!theme) return;
-    if (els.themePreviewId) els.themePreviewId.textContent = theme.id;
     renderThemeTft(theme);
     if (els.themeStatus) {
       els.themeStatus.textContent =

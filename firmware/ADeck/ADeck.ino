@@ -66,7 +66,23 @@ const uint8_t THEME_SELECTED = 5;
 const uint8_t THEME_PRESSED = 6;
 const uint8_t THEME_COUNT = 7;
 
+const uint8_t BG_EFFECT_NONE = 0;
+const uint8_t BG_EFFECT_STARS = 1;
+// Keep RAM light — gutters are narrow, so every star must stay visible there.
+const uint8_t STAR_COUNT = 22;
+const uint8_t STAR_SIZE = 2;           // 2×2 dots read on the TFT; 1px is invisible
+const uint8_t STAR_MIN_SEP = 34;       // keep spread — no clumps
+const unsigned long STAR_FRAME_MS = 55;  // calm drift, a touch quicker
+
 const uint8_t SELECTED_MIX = 100;  // blend slot colour toward theme when selected
+
+struct StarDot {
+  int16_t x;
+  int16_t y;
+  int8_t dx;
+  int8_t dy;
+  uint8_t shade;  // 0 bright … 2 dim
+};
 
 struct SlotConfig {
   char label[LABEL_SIZE];
@@ -108,6 +124,10 @@ uint8_t stagedThemeMask = 0;
 bool receivingTheme = false;
 String themeTransactionId;
 unsigned long themeLastActivity = 0;
+uint8_t stagedBgEffect = BG_EFFECT_NONE;
+uint8_t bgEffect = BG_EFFECT_NONE;
+StarDot stars[STAR_COUNT];
+unsigned long nextStarFrame = 0;
 uint32_t activeGeneration = 0;
 int8_t activeRecord = -1;
 uint16_t slotIcons[TOTAL_APPS][ICON_SIZE * ICON_SIZE];
@@ -438,6 +458,311 @@ bool iconStreamActive(unsigned long now) {
   return iconRecvIndex >= 0 || !timeReached(now, iconStreamAt + ICON_STREAM_IDLE_MS);
 }
 
+bool pointInKeyCell(int x, int y) {
+  for (uint8_t i = 0; i < TOTAL_APPS; i++) {
+    if (
+      x >= slotX[i] && x < slotX[i] + KEY_W &&
+      y >= slotY[i] && y < slotY[i] + KEY_H
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+// True when any pixel of a STAR_SIZE block would sit on a key cell.
+bool starHitsKey(int x, int y) {
+  for (uint8_t dy = 0; dy < STAR_SIZE; dy++) {
+    for (uint8_t dx = 0; dx < STAR_SIZE; dx++) {
+      if (pointInKeyCell(x + dx, y + dy)) return true;
+    }
+  }
+  return false;
+}
+
+uint16_t starShadeColor(uint8_t shade) {
+  if (shade == 0) return 0xFFFF;  // white
+  if (shade == 1) return 0xDEFB;  // near-white
+  return 0xC618;                 // light grey — still readable on dark mist
+}
+
+// Mostly slow cardinal drift; light diagonals — reads as space, not buzzing.
+void assignStarDrift(StarDot &star) {
+  static const int8_t kDx[6] = {1, -1, 0, 0, 1, -1};
+  static const int8_t kDy[6] = {0, 0, 1, -1, 1, -1};
+  const uint8_t dir = static_cast<uint8_t>(random(6));
+  star.dx = kDx[dir];
+  star.dy = kDy[dir];
+}
+
+void nudgeStarDrift(StarDot &star) {
+  assignStarDrift(star);
+}
+
+bool starCoordsTooClose(int16_t x, int16_t y, int8_t ignoreIndex) {
+  for (uint8_t i = 0; i < STAR_COUNT; i++) {
+    if (static_cast<int8_t>(i) == ignoreIndex) continue;
+    int16_t adx = static_cast<int16_t>(stars[i].x - x);
+    int16_t ady = static_cast<int16_t>(stars[i].y - y);
+    if (adx < 0) adx = static_cast<int16_t>(-adx);
+    if (ady < 0) ady = static_cast<int16_t>(-ady);
+    if (adx < STAR_MIN_SEP && ady < STAR_MIN_SEP) return true;
+  }
+  return false;
+}
+
+void pickGutterPoint(uint8_t zone, int16_t &x, int16_t &y) {
+  switch (zone % 7) {
+    case 0:  // top margin
+      x = static_cast<int16_t>(random(SCREEN_W - STAR_SIZE));
+      y = static_cast<int16_t>(random(slotY[0]));
+      break;
+    case 1:  // gap between rows
+      x = static_cast<int16_t>(random(SCREEN_W - STAR_SIZE));
+      y = static_cast<int16_t>(
+        slotY[0] + KEY_H + random(slotY[3] - (slotY[0] + KEY_H))
+      );
+      break;
+    case 2:  // bottom margin
+      x = static_cast<int16_t>(random(SCREEN_W - STAR_SIZE));
+      y = static_cast<int16_t>(
+        slotY[3] + KEY_H +
+        random(SCREEN_H - (slotY[3] + KEY_H) - STAR_SIZE + 1)
+      );
+      break;
+    case 3:  // left margin
+      x = static_cast<int16_t>(random(slotX[0]));
+      y = static_cast<int16_t>(random(SCREEN_H - STAR_SIZE));
+      break;
+    case 4:  // gap between col 0 and 1
+      x = static_cast<int16_t>(
+        slotX[0] + KEY_W + random(slotX[1] - (slotX[0] + KEY_W))
+      );
+      y = static_cast<int16_t>(random(SCREEN_H - STAR_SIZE));
+      break;
+    case 5:  // gap between col 1 and 2
+      x = static_cast<int16_t>(
+        slotX[1] + KEY_W + random(slotX[2] - (slotX[1] + KEY_W))
+      );
+      y = static_cast<int16_t>(random(SCREEN_H - STAR_SIZE));
+      break;
+    default:  // right margin
+      x = static_cast<int16_t>(
+        slotX[2] + KEY_W +
+        random(SCREEN_W - (slotX[2] + KEY_W) - STAR_SIZE + 1)
+      );
+      y = static_cast<int16_t>(random(SCREEN_H - STAR_SIZE));
+      break;
+  }
+  if (x < 0) x = 0;
+  if (y < 0) y = 0;
+  if (x > SCREEN_W - STAR_SIZE) x = SCREEN_W - STAR_SIZE;
+  if (y > SCREEN_H - STAR_SIZE) y = SCREEN_H - STAR_SIZE;
+}
+
+// Place in gutters only. forcedZone >= 0 pins the strip for even coverage.
+void placeStarInGutter(StarDot &star, int8_t ignoreIndex, int8_t forcedZone) {
+  for (uint8_t attempt = 0; attempt < 40; attempt++) {
+    const uint8_t zone = forcedZone >= 0
+      ? static_cast<uint8_t>(forcedZone)
+      : static_cast<uint8_t>(random(7));
+    int16_t x = 0;
+    int16_t y = 0;
+    pickGutterPoint(zone, x, y);
+    if (!starHitsKey(x, y) && !starCoordsTooClose(x, y, ignoreIndex)) {
+      star.x = x;
+      star.y = y;
+      return;
+    }
+  }
+  // Last resort: zone only, ignore spacing once.
+  int16_t x = 0;
+  int16_t y = 0;
+  pickGutterPoint(forcedZone >= 0 ? static_cast<uint8_t>(forcedZone) : 0, x, y);
+  star.x = x;
+  star.y = y;
+}
+
+void seedStars() {
+  randomSeed(micros() ^ (analogRead(A5) << 16) ^ millis());
+  for (uint8_t i = 0; i < STAR_COUNT; i++) {
+    // Round-robin gutters so the field isn't empty on one side / crowded on another.
+    placeStarInGutter(stars[i], static_cast<int8_t>(i), static_cast<int8_t>(i % 7));
+    assignStarDrift(stars[i]);
+    stars[i].shade = static_cast<uint8_t>(i % 3);
+  }
+  nextStarFrame = 0;
+}
+
+void paintStarBlock(int x, int y, uint16_t color) {
+  for (uint8_t dy = 0; dy < STAR_SIZE; dy++) {
+    for (uint8_t dx = 0; dx < STAR_SIZE; dx++) {
+      const int px = x + dx;
+      const int py = y + dy;
+      if (px < 0 || px >= SCREEN_W || py < 0 || py >= SCREEN_H) continue;
+      if (pointInKeyCell(px, py)) continue;
+      gfx->drawPixel(px, py, color);
+    }
+  }
+}
+
+void paintAllStars() {
+  if (bgEffect != BG_EFFECT_STARS || !displayReady) return;
+  for (uint8_t i = 0; i < STAR_COUNT; i++) {
+    paintStarBlock(stars[i].x, stars[i].y, starShadeColor(stars[i].shade));
+  }
+}
+
+void serviceStars(unsigned long now) {
+  if (bgEffect != BG_EFFECT_STARS) return;
+  if (!displayReady || drawing || pressedVisible) return;
+  if (iconStreamActive(now)) return;
+  if (fullRedrawPending || keyRedrawPending) return;
+  if (nextStarFrame != 0 && !timeReached(now, nextStarFrame)) return;
+  nextStarFrame = now + STAR_FRAME_MS;
+
+  static uint8_t starTick = 0;
+  starTick++;
+
+  const uint16_t bg = config.theme.values[THEME_BACKGROUND];
+  for (uint8_t i = 0; i < STAR_COUNT; i++) {
+    // Dimmer stars drift slower (parallax depth) — leave them painted.
+    const uint8_t period = static_cast<uint8_t>(1 + stars[i].shade);  // 1..3
+    if ((starTick % period) != 0) continue;
+
+    StarDot &star = stars[i];
+    const int16_t ox = star.x;
+    const int16_t oy = star.y;
+    int16_t nx = static_cast<int16_t>(star.x + star.dx);
+    int16_t ny = static_cast<int16_t>(star.y + star.dy);
+
+    // Near / past the bezel: leave the edge, re-enter in a sparse free gutter.
+    if (
+      nx < 0 || nx > SCREEN_W - STAR_SIZE ||
+      ny < 0 || ny > SCREEN_H - STAR_SIZE
+    ) {
+      paintStarBlock(ox, oy, bg);
+      placeStarInGutter(star, static_cast<int8_t>(i), static_cast<int8_t>(random(7)));
+      assignStarDrift(star);
+      paintStarBlock(star.x, star.y, starShadeColor(star.shade));
+      continue;
+    }
+
+    // Keys: bounce and keep floating — never sit invisible on top of a key.
+    if (starHitsKey(nx, ny)) {
+      const int16_t tryX = static_cast<int16_t>(star.x - star.dx);
+      const int16_t tryY2 = static_cast<int16_t>(star.y - star.dy);
+      if (
+        tryX >= 0 && tryX <= SCREEN_W - STAR_SIZE &&
+        !starHitsKey(tryX, ny)
+      ) {
+        star.dx = static_cast<int8_t>(-star.dx);
+        nx = tryX;
+      } else if (
+        tryY2 >= 0 && tryY2 <= SCREEN_H - STAR_SIZE &&
+        !starHitsKey(nx, tryY2)
+      ) {
+        star.dy = static_cast<int8_t>(-star.dy);
+        ny = tryY2;
+      } else if (
+        tryX >= 0 && tryX <= SCREEN_W - STAR_SIZE &&
+        tryY2 >= 0 && tryY2 <= SCREEN_H - STAR_SIZE &&
+        !starHitsKey(tryX, tryY2)
+      ) {
+        star.dx = static_cast<int8_t>(-star.dx);
+        star.dy = static_cast<int8_t>(-star.dy);
+        nx = tryX;
+        ny = tryY2;
+      } else {
+        nudgeStarDrift(star);
+        nx = star.x;
+        ny = star.y;
+      }
+      if (starHitsKey(nx, ny)) {
+        nx = star.x;
+        ny = star.y;
+      }
+    }
+
+    // Soft separation — steer away if another star is crowding this one.
+    if (starCoordsTooClose(nx, ny, static_cast<int8_t>(i))) {
+      int16_t pushX = 0;
+      int16_t pushY = 0;
+      for (uint8_t j = 0; j < STAR_COUNT; j++) {
+        if (j == i) continue;
+        int16_t adx = static_cast<int16_t>(nx - stars[j].x);
+        int16_t ady = static_cast<int16_t>(ny - stars[j].y);
+        int16_t absx = adx < 0 ? static_cast<int16_t>(-adx) : adx;
+        int16_t absy = ady < 0 ? static_cast<int16_t>(-ady) : ady;
+        if (absx < STAR_MIN_SEP && absy < STAR_MIN_SEP) {
+          if (adx != 0) pushX += adx > 0 ? 1 : -1;
+          if (ady != 0) pushY += ady > 0 ? 1 : -1;
+        }
+      }
+      if (pushX != 0) star.dx = pushX > 0 ? 1 : -1;
+      if (pushY != 0) star.dy = pushY > 0 ? 1 : -1;
+      if (star.dx == 0 && star.dy == 0) assignStarDrift(star);
+      nx = static_cast<int16_t>(star.x + star.dx);
+      ny = static_cast<int16_t>(star.y + star.dy);
+      if (
+        nx < 0 || nx > SCREEN_W - STAR_SIZE ||
+        ny < 0 || ny > SCREEN_H - STAR_SIZE ||
+        starHitsKey(nx, ny) ||
+        starCoordsTooClose(nx, ny, static_cast<int8_t>(i))
+      ) {
+        nx = star.x;
+        ny = star.y;
+      }
+    }
+
+    // Rare soft turn while floating.
+    if (random(520) == 0) {
+      nudgeStarDrift(star);
+    }
+
+    // Unstick: if this frame couldn't step, try every cardinal; still stuck → re-place.
+    if (nx == ox && ny == oy) {
+      static const int8_t kTryDx[4] = {1, -1, 0, 0};
+      static const int8_t kTryDy[4] = {0, 0, 1, -1};
+      bool stepped = false;
+      for (uint8_t t = 0; t < 4; t++) {
+        const int16_t tx = static_cast<int16_t>(ox + kTryDx[t]);
+        const int16_t ty = static_cast<int16_t>(oy + kTryDy[t]);
+        if (
+          tx < 0 || tx > SCREEN_W - STAR_SIZE ||
+          ty < 0 || ty > SCREEN_H - STAR_SIZE ||
+          starHitsKey(tx, ty) ||
+          starCoordsTooClose(tx, ty, static_cast<int8_t>(i))
+        ) {
+          continue;
+        }
+        star.dx = kTryDx[t];
+        star.dy = kTryDy[t];
+        nx = tx;
+        ny = ty;
+        stepped = true;
+        break;
+      }
+      if (!stepped) {
+        paintStarBlock(ox, oy, bg);
+        placeStarInGutter(
+          star, static_cast<int8_t>(i), static_cast<int8_t>(random(7))
+        );
+        assignStarDrift(star);
+        paintStarBlock(star.x, star.y, starShadeColor(star.shade));
+        continue;
+      }
+    }
+
+    if (nx != ox || ny != oy) {
+      paintStarBlock(ox, oy, bg);
+      star.x = nx;
+      star.y = ny;
+    }
+    paintStarBlock(star.x, star.y, starShadeColor(star.shade));
+  }
+}
+
 void requestFullRedraw() {
   fullRedrawPending = true;
 }
@@ -456,6 +781,8 @@ void serviceRedraw(unsigned long now) {
     keyRedrawPending = 0;
     drawing = true;
     gfx->fillScreen(config.theme.values[THEME_BACKGROUND]);
+    // Stars sit in the gutters behind keys — paint them before the key cells.
+    paintAllStars();
     for (uint8_t i = 0; i < TOTAL_APPS; i++) {
       drawKey(i);
       readSerial();
@@ -765,17 +1092,31 @@ uint16_t stagedThemeCrc() {
   return crc;
 }
 
+uint8_t parseBgEffect(const String &name) {
+  if (name == "stars") return BG_EFFECT_STARS;
+  return BG_EFFECT_NONE;
+}
+
 // Theme uses its own transaction so a failed theme push can't wipe key config.
 void beginTheme(const String &line) {
   const int firstTab = line.indexOf('\t');
   const int secondTab = line.indexOf('\t', firstTab + 1);
-  if (firstTab < 0 || secondTab < 0 || line.indexOf('\t', secondTab + 1) >= 0) {
+  const int thirdTab = line.indexOf('\t', secondTab + 1);
+  if (firstTab < 0 || secondTab < 0) {
+    sendThemeError("-", "BAD_BEGIN");
+    return;
+  }
+  // Optional 4th field: background effect id (e.g. stars). No further fields.
+  if (thirdTab >= 0 && line.indexOf('\t', thirdTab + 1) >= 0) {
     sendThemeError("-", "BAD_BEGIN");
     return;
   }
 
   const String id = line.substring(firstTab + 1, secondTab);
-  const String count = line.substring(secondTab + 1);
+  const String count = thirdTab < 0
+    ? line.substring(secondTab + 1)
+    : line.substring(secondTab + 1, thirdTab);
+  const String effect = thirdTab < 0 ? String("") : line.substring(thirdTab + 1);
   if (!validTransactionId(id)) {
     sendThemeError("-", "BAD_TX");
     return;
@@ -797,6 +1138,7 @@ void beginTheme(const String &line) {
   }
   memset(stagedThemeRgb, 0, sizeof(stagedThemeRgb));
   stagedThemeMask = 0;
+  stagedBgEffect = parseBgEffect(effect);
   themeTransactionId = id;
   themeLastActivity = millis();
   receivingTheme = true;
@@ -890,6 +1232,10 @@ void endTheme(const String &line) {
   }
 
   config = next;
+  bgEffect = stagedBgEffect;
+  if (bgEffect == BG_EFFECT_STARS) {
+    seedStars();
+  }
   // Drop icons — they were blended for the old background; host will re-send.
   pressedVisible = false;
   memset(slotHasIcon, 0, sizeof(slotHasIcon));
@@ -1180,5 +1526,6 @@ void loop() {
 
   updatePressedView(now);
   serviceRedraw(now);
+  serviceStars(now);
   readTouch(now);
 }

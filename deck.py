@@ -80,14 +80,15 @@ mimetypes.add_type("text/javascript", ".js")
 # Themes: one definition for web CSS vars + TFT RGB565 colours.
 # Profiles store the stable id; display names can change freely.
 
-DEFAULT_THEME_ID = "adeck-classic"  # id kept for old saves; UI name is Carbon Mist
+DEFAULT_THEME_ID = "adeck-classic"  # id kept for old saves; UI name is Space
 
 _THEMES = [
     {
         "id": "adeck-classic",
-        "name": "Carbon Mist",
-        "short": "Mist",
-        "description": "Cool blue-grey atmosphere, near-black controls, one red signal. Calm industrial hardware.",
+        "name": "Space",
+        "short": "Space",
+        "description": "Dark display with slow drifting stars behind colourful app keys. Calm deep-space background.",
+        "bgEffect": "stars",
         "web": {
             "light": {
                 "--bg": "#b8c7c8",
@@ -389,6 +390,12 @@ def theme_for(theme_id):
     return THEMES.get(key) or THEMES[DEFAULT_THEME_ID]
 
 
+def theme_bg_effect(theme_id):
+    """Optional live TFT background effect id (empty = static fill)."""
+    effect = str(theme_for(theme_id).get("bgEffect") or "").strip().lower()
+    return effect if effect in {"stars"} else ""
+
+
 def theme_payload():
     return {
         "ok": True,
@@ -401,6 +408,7 @@ def theme_payload():
                 "name": theme["name"],
                 "short": theme["short"],
                 "description": theme["description"],
+                "bgEffect": theme.get("bgEffect") or "",
                 "web": theme["web"],
                 "tft": theme["tft"],
             }
@@ -732,10 +740,14 @@ def theme_frame(theme_id, txid, background=None):
 
     Its own transaction rather than part of CFG_BEGIN: a theme can change on
     its own, and a rejected theme must not be able to take the slot config down
-    with it.
+    with it. Optional bg effect rides on BEGIN so older colour CRCs stay valid.
     """
     values = theme_values(theme_id, background)
-    lines = [f"CFG_THEME_BEGIN\t{txid}\t{len(values)}"]
+    effect = theme_bg_effect(theme_id)
+    if effect:
+        lines = [f"CFG_THEME_BEGIN\t{txid}\t{len(values)}\t{effect}"]
+    else:
+        lines = [f"CFG_THEME_BEGIN\t{txid}\t{len(values)}"]
     for index, (red, green, blue) in enumerate(values):
         lines.append(
             f"CFG_THEME_VALUE\t{txid}\t{index}\t#{red:02X}{green:02X}{blue:02X}"

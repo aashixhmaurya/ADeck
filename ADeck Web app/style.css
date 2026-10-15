@@ -970,8 +970,6 @@ select:focus:not(:focus-visible) { outline: none; }
 .theme-card-name { font-size: 18px; font-weight: 900; letter-spacing: 0.1em; text-transform: uppercase; }
 .theme-card-tag { font-size: 12px; letter-spacing: 0.14em; color: var(--accent); min-height: 1em; }
 .theme-card-desc { font-size: 13px; font-weight: 800; letter-spacing: 0.03em; opacity: 0.75; line-height: 1.4; }
-.theme-card-strip { display: flex; height: 10px; border: 1px solid var(--line); }
-.theme-card-strip i { flex: 1; }
 
 .theme-preview {
   display: flex;
@@ -984,6 +982,8 @@ select:focus:not(:focus-visible) { outline: none; }
 
 /* the miniature panel. its own colours come from the theme, not the app */
 .theme-tft {
+  position: relative;
+  overflow: hidden;
   background: #000000;
   border: 1px solid var(--tft-line, var(--line));
   padding: 10px;
@@ -992,9 +992,45 @@ select:focus:not(:focus-visible) { outline: none; }
   gap: 8px;
   aspect-ratio: 4 / 3;
 }
-.theme-tft-chrome { display: flex; align-items: center; justify-content: space-between; font-size: 11px; letter-spacing: 0.16em; opacity: 0.55; color: #ffffff; }
+.theme-tft-stars {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+.theme-tft-stars i {
+  position: absolute;
+  width: 2px;
+  height: 2px;
+  border-radius: 0;
+  background: #ffffff;
+  opacity: 0.85;
+  animation: theme-star-drift 9s linear infinite;
+}
+.theme-tft-stars i:nth-child(3n) { width: 2px; height: 2px; opacity: 0.65; }
+.theme-tft-stars i:nth-child(4n) { width: 3px; height: 3px; opacity: 1; }
+@keyframes theme-star-drift {
+  0% { transform: translate(0, 0); }
+  25% { transform: translate(4px, -2px); }
+  50% { transform: translate(1px, 3px); }
+  75% { transform: translate(-3px, 1px); }
+  100% { transform: translate(0, 0); }
+}
+.theme-tft-chrome {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  opacity: 0.55;
+  color: #ffffff;
+}
 .theme-tft-key { opacity: 0.9; }
 .theme-tft-grid {
+  position: relative;
+  z-index: 1;
   flex: 1;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
