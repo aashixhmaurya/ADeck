@@ -81,6 +81,10 @@ mimetypes.add_type("text/javascript", ".js")
 # Profiles store the stable id; display names can change freely.
 
 DEFAULT_THEME_ID = "adeck-classic"  # id kept for old saves; UI name is Space
+DEFAULT_ROTATION = 1  # ILI9341 landscape used since the first ADeck builds
+VALID_ROTATIONS = frozenset({0, 1, 2, 3})
+# UI degrees for each setRotation value (current panel on setRotation(1) = 0°).
+_ROTATION_DEGREES = {1: 0, 0: 90, 2: 180, 3: 270}
 
 _THEMES = [
     {
@@ -582,10 +586,27 @@ def normalize_config(raw):
         else:
             raise ValueError(f'Profile "{name}" background must be #RRGGBB')
 
+        # TFT panel orientation (Arduino setRotation 0..3). Default 1 = current landscape.
+        raw_rotation = raw_profile.get("rotation")
+        if raw_rotation is None or raw_rotation == "":
+            rotation = DEFAULT_ROTATION
+        else:
+            try:
+                rotation = int(raw_rotation)
+            except (TypeError, ValueError) as error:
+                raise ValueError(
+                    f'Profile "{name}" rotation must be 0, 1, 2, or 3'
+                ) from error
+            if rotation not in VALID_ROTATIONS:
+                raise ValueError(
+                    f'Profile "{name}" rotation must be 0, 1, 2, or 3'
+                )
+
         profile = {
             "name": name,
             "theme": theme,
             "background": background,
+            "rotation": rotation,
             "buttons": [slots[index] for index in range(SLOT_COUNT)],
         }
         if profile_id is not None:
@@ -662,6 +683,51 @@ def active_background(config):
     if isinstance(background, str) and COLOR_PATTERN.fullmatch(background):
         return background.lower()
     return theme_background(theme_for(profile.get("theme"))["id"])
+
+
+def normalize_rotation(value):
+    """Clamp a raw rotation to a valid setRotation id, defaulting to landscape."""
+    if value is None or value == "":
+        return DEFAULT_ROTATION
+    try:
+        rotation = int(value)
+    except (TypeError, ValueError):
+        return DEFAULT_ROTATION
+    return rotation if rotation in VALID_ROTATIONS else DEFAULT_ROTATION
+
+
+def active_rotation(config):
+    """Arduino setRotation for the active workspace (0..3)."""
+    if not config:
+        return DEFAULT_ROTATION
+    try:
+        active = config["active_profile"]
+        profile = next(item for item in config["profiles"] if item["name"] == active)
+    except (KeyError, TypeError, StopIteration):
+        return DEFAULT_ROTATION
+    return normalize_rotation(profile.get("rotation"))
+
+
+def rotation_degrees(rotation):
+    """Monitor-style degrees label for a setRotation value."""
+    return _ROTATION_DEGREES.get(normalize_rotation(rotation), 0)
+
+
+def next_rotation(rotation):
+    """Cycle 0° → 90° → 180° → 270° → 0° in UI order."""
+    order = (1, 0, 2, 3)
+    current = normalize_rotation(rotation)
+    try:
+        index = order.index(current)
+    except ValueError:
+        index = 0
+    return order[(index + 1) % len(order)]
+
+
+def rotation_frame(rotation, txid):
+    """Single-line orientation transaction sent after theme, before icons."""
+    value = normalize_rotation(rotation)
+    return f"CFG_ROTATE\t{txid}\t{value}\n".encode("ascii")
 
 
 def _crc16_next(crc, value):
@@ -1694,6 +1760,8 @@ _ICON_ACK_TIMEOUT = 1.5
 # the theme frame is a handful of short lines, so it needs far less patience
 _THEME_ATTEMPTS = 2
 _THEME_ACK_TIMEOUT = 1.5
+_ROTATE_ATTEMPTS = 2
+_ROTATE_ACK_TIMEOUT = 1.5
 _ICON_EXTRACT_LOCK = threading.Lock()
 _ICON_APIS_READY = False
 _ICON_FILE_SUFFIXES = {".dll", ".exe", ".ico", ".lnk"}
@@ -2245,7 +2313,9 @@ class ADeckDevice:
         self._firmware = None
         self._tft_icons = False
         self._tft_theme = False
+        self._tft_rotate = False
         self._theme_id = None
+        self._rotation = None
         self._last_error = ""
         self._last_sync = None
         self._last_txid = None
@@ -2315,6 +2385,7 @@ class ADeckDevice:
                 "port": self._port,
                 "firmware": self._firmware,
                 "theme": self._theme_id,
+                "rotation": self._rotation,
                 "last_sync": self._last_sync,
                 "last_transaction_id": self._last_txid,
                 "error": self._last_error or None,
@@ -2353,7 +2424,9 @@ class ADeckDevice:
             self._firmware = None
             self._tft_icons = False
             self._tft_theme = False
+            self._tft_rotate = False
             self._theme_id = None
+            self._rotation = None
             self._last_sync = None
             self._last_error = "Reconnecting"
         if connection is not None:
@@ -2450,7 +2523,8 @@ class ADeckDevice:
                 if line == f"ADECK_PONG\t{PROTOCOL_VERSION}":
                     self._tft_icons = False
                     self._tft_theme = False
-                    caps_deadline = time.monotonic() + 0.3
+                    self._tft_rotate = False
+                    caps_deadline = time.monotonic() + 0.35
                     while time.monotonic() < caps_deadline and not self._stop.is_set():
                         extra = connection.readline().decode(
                             "ascii", errors="ignore"
@@ -2459,9 +2533,11 @@ class ADeckDevice:
                             self._tft_icons = True
                         elif extra == "ADECK_CAPS\tTHEME":
                             self._tft_theme = True
+                        elif extra == "ADECK_CAPS\tROTATE":
+                            self._tft_rotate = True
                         elif extra.startswith("PRESS\t"):
                             self._handle_line(extra)
-                        if self._tft_icons and self._tft_theme:
+                        if self._tft_icons and self._tft_theme and self._tft_rotate:
                             break
                     # a board that only ever said ICON simply runs the clock out.
                     # cheaper than guessing from a quiet read and losing THEME
@@ -2470,6 +2546,10 @@ class ADeckDevice:
                     self._handle_line(line)
                 if line == "ADECK_CAPS\tICON":
                     self._tft_icons = True
+                if line == "ADECK_CAPS\tTHEME":
+                    self._tft_theme = True
+                if line == "ADECK_CAPS\tROTATE":
+                    self._tft_rotate = True
         except Exception:
             connection.close()
             raise
@@ -2529,7 +2609,9 @@ class ADeckDevice:
             self._firmware = None
             self._tft_icons = False
             self._tft_theme = False
+            self._tft_rotate = False
             self._theme_id = None
+            self._rotation = None
             self._last_sync = False
             if error:
                 self._last_error = error
@@ -2583,6 +2665,9 @@ class ADeckDevice:
         elif line == "ADECK_CAPS\tTHEME":
             with self._state_lock:
                 self._tft_theme = True
+        elif line == "ADECK_CAPS\tROTATE":
+            with self._state_lock:
+                self._tft_rotate = True
         elif line == f"ADECK_READY\t{PROTOCOL_VERSION}":
             self._resync.set()
 
@@ -2603,14 +2688,13 @@ class ADeckDevice:
                     self._last_txid = txid
                     self._last_error = ""
                 LOGGER.info("Synchronized transaction %s", txid)
-                # theme first, then icons: the panel blends each icon onto the
-                # theme's background, so the theme has to be in place before the
-                # pixels that sit on it are chosen
+                # theme → rotation → icons: layout must settle before pixels land
                 wanted = active_theme_id(config)
                 background = active_background(config)
                 in_force = self._push_theme(
                     connection, wanted, txid, background=background
                 )
+                self._push_rotation(connection, active_rotation(config), txid)
                 # no theme in force means a board that still paints black - the
                 # old firmware - so the icons go back to being blended on black
                 blend = (
@@ -2681,6 +2765,46 @@ class ADeckDevice:
             theme_id,
         )
         return self._theme_id
+
+    def _push_rotation(self, connection, rotation, txid):
+        """Send panel orientation. Older boards without ROTATE caps are skipped."""
+        with self._state_lock:
+            capable = self._tft_rotate
+        if connection is None or not capable:
+            return None
+        value = normalize_rotation(rotation)
+        expected = f"CFG_ROTATE_OK\t{txid}"
+        rejected = f"CFG_ROTATE_ERR\t{txid}\t"
+        frame = rotation_frame(value, txid)
+        for attempt in range(1, _ROTATE_ATTEMPTS + 1):
+            if self._stop.is_set():
+                return self._rotation
+            try:
+                connection.write(frame)
+                connection.flush()
+                deadline = time.monotonic() + _ROTATE_ACK_TIMEOUT
+                while time.monotonic() < deadline and not self._stop.is_set():
+                    reply = connection.readline().decode("ascii", errors="ignore").strip()
+                    if reply == expected:
+                        with self._state_lock:
+                            self._rotation = value
+                        LOGGER.info(
+                            "Applied rotation %s (%s°)", value, rotation_degrees(value)
+                        )
+                        return value
+                    if reply.startswith(rejected):
+                        LOGGER.debug("Rotation rejected: %s", reply)
+                        break
+                    if reply.startswith("PRESS\t") or reply.startswith("ADECK_CAPS\t"):
+                        self._handle_line(reply)
+            except Exception as error:
+                LOGGER.debug("Rotation write failed: %s", error)
+                return self._rotation
+        LOGGER.warning(
+            "Rotation %s was not accepted by the board; it keeps its previous orientation",
+            value,
+        )
+        return self._rotation
 
     def _push_app_icons(self, connection, buttons, txid, background="#000000"):
         with self._state_lock:

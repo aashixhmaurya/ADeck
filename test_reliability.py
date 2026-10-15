@@ -81,6 +81,8 @@ class FakeSerial:
                     )
                 else:
                     self.replies.append(f"CFG_THEME_OK\t{parts[1]}\n".encode("ascii"))
+            elif parts[0] == "CFG_ROTATE" and len(parts) > 1:
+                self.replies.append(f"CFG_ROTATE_OK\t{parts[1]}\n".encode("ascii"))
             elif parts[0] == "CFG_ICON_END" and len(parts) > 2:
                 self.icon_frames += 1
                 if self.icon_frames <= self.frames_to_drop:
@@ -1109,6 +1111,10 @@ class ReliabilityTests(unittest.TestCase):
             "CFG_THEME_OK",
             "CFG_THEME_ERR",
             "ADECK_CAPS\\tTHEME",
+            "ADECK_CAPS\\tROTATE",
+            "CFG_ROTATE",
+            "CFG_ROTATE_OK",
+            "applyDisplayRotation",
             "THEME_BACKGROUND",
             "THEME_TEXT",
             "THEME_SELECTED",
@@ -1130,12 +1136,18 @@ class ReliabilityTests(unittest.TestCase):
             "normalizeThemeId",
             "data-deck-theme",
             "themeId",
+            "cycleActiveRotation",
+            "normalizeRotation",
+            "ROTATION_ORDER",
         ):
             self.assertIn(token, script, token)
         self.assertIn("themeModal", page)
         self.assertIn("themeBtn", page)
+        self.assertIn("rotateBtn", page)
         self.assertIn(".theme-card", style)
         self.assertIn(".theme-tft", style)
+        self.assertIn(".grid.is-portrait", style)
+        self.assertIn(".theme-tft.is-portrait", style)
 
     def test_profile_background_defaults_and_override(self):
         normalized = deck.normalize_config(sample_config())
@@ -1192,6 +1204,59 @@ class ReliabilityTests(unittest.TestCase):
         self.assertTrue(classic.startswith("CFG_THEME_BEGIN\tabc123\t7\tstars\n"))
         cyber = deck.theme_frame("cyber", "abc123").decode("ascii")
         self.assertTrue(cyber.startswith("CFG_THEME_BEGIN\tabc123\t7\n"))
+
+    def test_profile_rotation_defaults_and_cycle(self):
+        config = sample_config()
+        normalized = deck.normalize_config(config)
+        self.assertEqual(normalized["profiles"][0]["rotation"], 1)
+        self.assertEqual(deck.active_rotation(normalized), 1)
+        self.assertEqual(deck.rotation_degrees(1), 0)
+        self.assertEqual(deck.rotation_degrees(0), 90)
+        self.assertEqual(deck.next_rotation(1), 0)
+        self.assertEqual(deck.next_rotation(0), 2)
+        self.assertEqual(deck.next_rotation(2), 3)
+        self.assertEqual(deck.next_rotation(3), 1)
+        self.assertEqual(deck.rotation_frame(0, "abc123"), b"CFG_ROTATE\tabc123\t0\n")
+
+        config["profiles"][0]["rotation"] = 3
+        self.assertEqual(deck.normalize_config(config)["profiles"][0]["rotation"], 3)
+        with self.assertRaises(ValueError):
+            bad = sample_config()
+            bad["profiles"][0]["rotation"] = 9
+            deck.normalize_config(bad)
+
+    def test_rotation_reaches_a_board_that_announced_it(self):
+        normalized = self._theme_config()
+        normalized["profiles"][0]["rotation"] = 0
+        device = self._icon_device("rotate-on.json")
+        connection = FakeSerial()
+        device._connection = connection
+        device._tft_icons = True
+        device._tft_theme = True
+        device._tft_rotate = True
+
+        device._sync(normalized, "abc123")
+
+        self.assertEqual(connection.writes[0], deck.config_frame(normalized, "abc123"))
+        self.assertEqual(connection.writes[1], deck.theme_frame("cyber", "abc123"))
+        self.assertEqual(connection.writes[2], deck.rotation_frame(0, "abc123"))
+        self.assertTrue(connection.writes[3].startswith(b"CFG_ICON_BEGIN\tabc123\t0\t32\n"))
+        self.assertEqual(device.status()["rotation"], 0)
+
+    def test_rotation_is_skipped_when_board_has_no_caps(self):
+        normalized = self._theme_config()
+        device = self._icon_device("rotate-off.json")
+        connection = FakeSerial()
+        device._connection = connection
+        device._tft_icons = True
+        device._tft_theme = True
+        device._tft_rotate = False
+
+        device._sync(normalized, "abc123")
+
+        joined = b"".join(connection.writes)
+        self.assertNotIn(b"CFG_ROTATE", joined)
+        self.assertIsNone(device.status()["rotation"])
 
     def test_web_background_colour_layer_is_wired_up(self):
         script = (deck.WEB_DIR / "script.js").read_text(encoding="utf-8")

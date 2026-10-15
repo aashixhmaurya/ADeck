@@ -106,11 +106,44 @@
     return { index: i, label: "", command: "", kind: "", color: DEFAULT_COLOR };
   }
 
+  const DEFAULT_ROTATION = 1; // ILI9341 landscape (monitor 0°)
+  const ROTATION_ORDER = [1, 0, 2, 3]; // cycle: 0° → 90° → 180° → 270°
+  const ROTATION_DEGREES = { 1: 0, 0: 90, 2: 180, 3: 270 };
+
+  function normalizeRotation(value) {
+    const n = Number(value);
+    if (Number.isInteger(n) && n >= 0 && n <= 3) return n;
+    return DEFAULT_ROTATION;
+  }
+
+  function rotationDegrees(rotation) {
+    return ROTATION_DEGREES[normalizeRotation(rotation)] ?? 0;
+  }
+
+  function nextRotation(rotation) {
+    const current = normalizeRotation(rotation);
+    const index = ROTATION_ORDER.indexOf(current);
+    return ROTATION_ORDER[((index < 0 ? 0 : index) + 1) % ROTATION_ORDER.length];
+  }
+
+  function isPortraitRotation(rotation) {
+    // ILI9341: 0 and 2 are 240×320; 1 and 3 are 320×240.
+    const r = normalizeRotation(rotation);
+    return r === 0 || r === 2;
+  }
+
+  function isFlippedRotation(rotation) {
+    // 180° and 270° share aspect with 0°/90° — flip so the preview shows the difference.
+    const r = normalizeRotation(rotation);
+    return r === 2 || r === 3;
+  }
+
   function makeProfile(name) {
     return {
       id: newProfileId(),
       name: String(name || "Untitled").slice(0, PROFILE_NAME_MAX),
       theme: DEFAULT_DECK_THEME,
+      rotation: DEFAULT_ROTATION,
       background: DEFAULT_BACKGROUND,
       slots: Array.from({ length: SLOTS_PER_PROFILE }, (_, i) => makeSlot(i)),
     };
@@ -119,6 +152,7 @@
   function cloneProfile(source, newName) {
     const p = makeProfile(newName || source.name + " Copy");
     p.theme = normalizeThemeId(source.theme);
+    p.rotation = normalizeRotation(source.rotation);
     p.background = normalizeHex(source.background || DEFAULT_BACKGROUND);
     p.slots = source.slots.map((s, i) => ({
       index: i,
@@ -182,6 +216,7 @@
       id: raw.id || newProfileId(),
       name: String(raw.name || "Untitled").slice(0, PROFILE_NAME_MAX),
       theme: themeId,
+      rotation: normalizeRotation(raw.rotation),
       background: raw.background ? normalizeHex(raw.background) : themeBg,
       slots: Array.from({ length: SLOTS_PER_PROFILE }, (_, i) => {
         const s = (raw.slots && raw.slots[i]) || (raw.buttons && raw.buttons[i]) || {};
@@ -214,7 +249,10 @@
     deleteProfileBtn: $("deleteProfileBtn"),
     themeBtn: $("themeBtn"),
     themeBtnName: $("themeBtnName"),
+    rotateBtn: $("rotateBtn"),
+    rotateBtnDeg: $("rotateBtnDeg"),
     buttonGrid: $("buttonGrid"),
+    deviceFrame: $("deviceFrame"),
     deviceConnBadge: $("deviceConnBadge"),
     deviceScreen: $("deviceScreen"),
     screenActiveKey: $("screenActiveKey"),
@@ -660,6 +698,48 @@
     applyDeckTheme(id);
     if (els.themeBtnName) els.themeBtnName.textContent = deckThemeShort(activeDeckThemeId());
     if (els.themeBtn) els.themeBtn.title = "Theme: " + deckThemeName(activeDeckThemeId());
+    updateRotationUi();
+  }
+
+  function activeRotation() {
+    const profile = activeProfile();
+    return normalizeRotation(profile ? profile.rotation : DEFAULT_ROTATION);
+  }
+
+  function applyPreviewOrientation(root, rotation) {
+    if (!root) return;
+    const value = normalizeRotation(rotation);
+    root.dataset.rotation = String(value);
+    root.classList.toggle("is-portrait", isPortraitRotation(value));
+    root.classList.toggle("is-flipped", isFlippedRotation(value));
+  }
+
+  function updateRotationUi() {
+    const rotation = activeRotation();
+    const degrees = rotationDegrees(rotation);
+    if (els.rotateBtnDeg) els.rotateBtnDeg.textContent = degrees + "°";
+    if (els.rotateBtn) {
+      els.rotateBtn.title = "Rotate TFT (" + degrees + "°) — click to cycle";
+    }
+    applyPreviewOrientation(els.deviceFrame, rotation);
+    applyPreviewOrientation(els.deviceScreen, rotation);
+    applyPreviewOrientation(els.buttonGrid, rotation);
+    applyPreviewOrientation(els.themeTft, rotation);
+    applyPreviewOrientation(els.themeTftGrid, rotation);
+  }
+
+  function cycleActiveRotation() {
+    const p = activeProfile();
+    if (!p) return;
+    p.rotation = nextRotation(p.rotation);
+    markDirty(true);
+    persistProfiles();
+    updateRotationUi();
+    renderGrid();
+    renderDeviceMeta();
+    if (themeModal.open) renderThemePreview();
+    syncActiveProfile();
+    toast("ROTATE " + rotationDegrees(p.rotation) + "°", "success");
   }
 
   function afterSlotFieldEdit() {
@@ -1007,6 +1087,7 @@
     if (els.deviceScreen) {
       els.deviceScreen.style.background = profileBackground(p);
     }
+    updateRotationUi();
   }
 
   function renderProfiles() {
@@ -1065,6 +1146,7 @@
     const p = activeProfile();
     els.buttonGrid.innerHTML = "";
     if (!p) return;
+    applyPreviewOrientation(els.buttonGrid, p.rotation);
 
     p.slots.forEach((slot) => {
       const btn = document.createElement("button");
@@ -1372,6 +1454,7 @@
       profile: {
         name: p.name,
         theme: normalizeThemeId(p.theme),
+        rotation: normalizeRotation(p.rotation),
         background: profileBackground(p),
         slots: p.slots.map((s) => ({
           index: s.index,
@@ -1479,6 +1562,7 @@
         id: p.id,
         name: p.name,
         theme: normalizeThemeId(p.theme),
+        rotation: normalizeRotation(p.rotation),
         background: profileBackground(p),
         buttons: p.slots.map((s) => {
           const button = {
@@ -1591,6 +1675,10 @@
       });
       els.themeTft.insertBefore(layer, els.themeTftGrid || els.themeTft.firstChild);
     }
+
+    const rotation = normalizeRotation(profile ? profile.rotation : DEFAULT_ROTATION);
+    applyPreviewOrientation(els.themeTft, rotation);
+    applyPreviewOrientation(els.themeTftGrid, rotation);
 
     const slots = profile ? profile.slots : [];
     els.themeTftGrid.innerHTML = "";
@@ -2744,6 +2832,7 @@
     els.deleteProfileBtn.addEventListener("click", deleteProfile);
     els.exportProfileBtn.addEventListener("click", exportActiveProfile);
     if (els.themeBtn) els.themeBtn.addEventListener("click", openThemeModal);
+    if (els.rotateBtn) els.rotateBtn.addEventListener("click", cycleActiveRotation);
     if (els.themeApplyBtn) els.themeApplyBtn.addEventListener("click", applySelectedTheme);
     if (els.themeCancelBtn) els.themeCancelBtn.addEventListener("click", closeThemeModal);
     if (els.themeModal) {

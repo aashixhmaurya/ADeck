@@ -35,15 +35,17 @@ const uint8_t TEXT_H = 8;              // built-in font height at size 1
 const unsigned long ICON_STREAM_IDLE_MS = 120;  // wait for stream to settle before redraw
 const unsigned long ICON_RECV_TIMEOUT_MS = 2000;
 
-const int SCREEN_W = 320;              // after setRotation(1)
-const int SCREEN_H = 240;
+// Runtime canvas size after setRotation (landscape 320×240, portrait 240×320).
+int16_t screenW = 320;
+int16_t screenH = 240;
+uint8_t displayRotation = 1;  // matches historical setRotation(1) landscape
+uint8_t gridCols = 3;
+uint8_t gridRows = 2;
 
-// 3×2 grid — draw box == touch box (no second geometry to drift)
+// Grid cell — draw box == touch box (no second geometry to drift)
 const int KEY_W = APP_W;
 const int KEY_H = APP_H;
 
-const int PRESS_W = SCREEN_W - 60;
-const int PRESS_H = SCREEN_H - 60;
 const int PRESS_RADIUS = 12;
 const uint16_t SERIAL_LINE_MAX = 180;
 const uint16_t RECORD_SLOT_0 = 0;
@@ -69,7 +71,7 @@ const uint8_t THEME_COUNT = 7;
 const uint8_t BG_EFFECT_NONE = 0;
 const uint8_t BG_EFFECT_STARS = 1;
 // Keep RAM light — gutters are narrow, so every star must stay visible there.
-const uint8_t STAR_COUNT = 22;
+const uint8_t STAR_COUNT = 16;
 const uint8_t STAR_SIZE = 2;           // 2×2 dots read on the TFT; 1px is invisible
 const uint8_t STAR_MIN_SEP = 34;       // keep spread — no clumps
 const unsigned long STAR_FRAME_MS = 55;  // calm drift, a touch quicker
@@ -110,8 +112,8 @@ struct PersistentRecord {
   uint16_t crc;
 };
 
-const int slotX[TOTAL_APPS] = {15, 115, 215, 15, 115, 215};
-const int slotY[TOTAL_APPS] = {20, 20, 20, 130, 130, 130};
+int16_t slotX[TOTAL_APPS] = {15, 115, 215, 15, 115, 215};
+int16_t slotY[TOTAL_APPS] = {20, 20, 20, 130, 130, 130};
 const uint16_t RECORD_SLOT_1 = RECORD_SLOT_0 + sizeof(PersistentRecord);
 
 DeviceConfig config;
@@ -358,6 +360,75 @@ uint16_t textColorFor(uint16_t color) {
   return brightness > 145 ? 0x0000 : 0xFFFF;
 }
 
+// Rebuild key grid for the active orientation (3×2 landscape / 2×3 portrait).
+// ILI9341 setRotation sizes: 0+2 = 240×320 portrait, 1+3 = 320×240 landscape.
+void rebuildSlotLayout() {
+  if (screenH > screenW) {
+    gridCols = 2;
+    gridRows = 3;
+    // Even gutters: 25 | 90 | 10 | 90 | 25  and  15 | 90 | 10 | 90 | 10 | 90 | 15
+    const int xs[2] = {25, 125};
+    const int ys[3] = {15, 115, 215};
+    for (uint8_t i = 0; i < TOTAL_APPS; i++) {
+      slotX[i] = xs[i % gridCols];
+      slotY[i] = ys[i / gridCols];
+    }
+  } else {
+    gridCols = 3;
+    gridRows = 2;
+    // Historical landscape spacing.
+    const int xs[3] = {15, 115, 215};
+    const int ys[2] = {20, 130};
+    for (uint8_t i = 0; i < TOTAL_APPS; i++) {
+      slotX[i] = xs[i % gridCols];
+      slotY[i] = ys[i / gridCols];
+    }
+  }
+}
+
+void applyDisplayRotation(uint8_t rotation) {
+  if (rotation > 3) rotation = 1;
+  displayRotation = rotation;
+  if (displayReady) {
+    gfx->setRotation(displayRotation);
+    screenW = static_cast<int16_t>(gfx->width());
+    screenH = static_cast<int16_t>(gfx->height());
+  } else if (displayRotation == 0 || displayRotation == 2) {
+    screenW = 240;
+    screenH = 320;
+  } else {
+    screenW = 320;
+    screenH = 240;
+  }
+  rebuildSlotLayout();
+  if (bgEffect == BG_EFFECT_STARS) {
+    seedStars();
+  }
+}
+
+void mapTouchToScreen(const TSPoint &point, int &touchX, int &touchY) {
+  // Keep rotation 1 identical to the original board mapping.
+  switch (displayRotation) {
+    case 0:  // portrait 90°
+      touchX = map(point.x, TS_MINX, TS_MAXX, 0, screenW);
+      touchY = map(point.y, TS_MINY, TS_MAXY, 0, screenH);
+      break;
+    case 2:  // portrait 180° — invert both axes vs rotation 0
+      touchX = map(point.x, TS_MINX, TS_MAXX, screenW, 0);
+      touchY = map(point.y, TS_MINY, TS_MAXY, screenH, 0);
+      break;
+    case 3:  // landscape 270° — invert both axes vs rotation 1
+      touchX = map(point.y, TS_MINY, TS_MAXY, 0, screenW);
+      touchY = map(point.x, TS_MINX, TS_MAXX, 0, screenH);
+      break;
+    case 1:  // landscape 0° (historical default)
+    default:
+      touchX = map(point.y, TS_MINY, TS_MAXY, screenW, 0);
+      touchY = map(point.x, TS_MINX, TS_MAXX, screenH, 0);
+      break;
+  }
+}
+
 // layout helpers
 int cardX(uint8_t index) {
   return slotX[index];
@@ -511,61 +582,61 @@ bool starCoordsTooClose(int16_t x, int16_t y, int8_t ignoreIndex) {
   return false;
 }
 
+uint8_t starGutterZoneCount() {
+  const uint8_t colGaps = gridCols > 1 ? static_cast<uint8_t>(gridCols - 1) : 0;
+  const uint8_t rowGaps = gridRows > 1 ? static_cast<uint8_t>(gridRows - 1) : 0;
+  return static_cast<uint8_t>(4 + colGaps + rowGaps);
+}
+
 void pickGutterPoint(uint8_t zone, int16_t &x, int16_t &y) {
-  switch (zone % 7) {
-    case 0:  // top margin
-      x = static_cast<int16_t>(random(SCREEN_W - STAR_SIZE));
-      y = static_cast<int16_t>(random(slotY[0]));
-      break;
-    case 1:  // gap between rows
-      x = static_cast<int16_t>(random(SCREEN_W - STAR_SIZE));
-      y = static_cast<int16_t>(
-        slotY[0] + KEY_H + random(slotY[3] - (slotY[0] + KEY_H))
-      );
-      break;
-    case 2:  // bottom margin
-      x = static_cast<int16_t>(random(SCREEN_W - STAR_SIZE));
-      y = static_cast<int16_t>(
-        slotY[3] + KEY_H +
-        random(SCREEN_H - (slotY[3] + KEY_H) - STAR_SIZE + 1)
-      );
-      break;
-    case 3:  // left margin
-      x = static_cast<int16_t>(random(slotX[0]));
-      y = static_cast<int16_t>(random(SCREEN_H - STAR_SIZE));
-      break;
-    case 4:  // gap between col 0 and 1
-      x = static_cast<int16_t>(
-        slotX[0] + KEY_W + random(slotX[1] - (slotX[0] + KEY_W))
-      );
-      y = static_cast<int16_t>(random(SCREEN_H - STAR_SIZE));
-      break;
-    case 5:  // gap between col 1 and 2
-      x = static_cast<int16_t>(
-        slotX[1] + KEY_W + random(slotX[2] - (slotX[1] + KEY_W))
-      );
-      y = static_cast<int16_t>(random(SCREEN_H - STAR_SIZE));
-      break;
-    default:  // right margin
-      x = static_cast<int16_t>(
-        slotX[2] + KEY_W +
-        random(SCREEN_W - (slotX[2] + KEY_W) - STAR_SIZE + 1)
-      );
-      y = static_cast<int16_t>(random(SCREEN_H - STAR_SIZE));
-      break;
+  const uint8_t zones = starGutterZoneCount();
+  zone = static_cast<uint8_t>(zone % (zones ? zones : 1));
+  const uint8_t colGaps = gridCols > 1 ? static_cast<uint8_t>(gridCols - 1) : 0;
+
+  if (zone == 0) {
+    x = static_cast<int16_t>(random(screenW - STAR_SIZE));
+    y = static_cast<int16_t>(random(max(1, slotY[0])));
+  } else if (zone == 1) {
+    const int bottom = slotY[TOTAL_APPS - 1] + KEY_H;
+    x = static_cast<int16_t>(random(screenW - STAR_SIZE));
+    y = static_cast<int16_t>(
+      bottom + random(max(1, screenH - bottom - STAR_SIZE + 1))
+    );
+  } else if (zone == 2) {
+    x = static_cast<int16_t>(random(max(1, slotX[0])));
+    y = static_cast<int16_t>(random(screenH - STAR_SIZE));
+  } else if (zone == 3) {
+    const int right = slotX[gridCols - 1] + KEY_W;
+    x = static_cast<int16_t>(
+      right + random(max(1, screenW - right - STAR_SIZE + 1))
+    );
+    y = static_cast<int16_t>(random(screenH - STAR_SIZE));
+  } else if (zone < static_cast<uint8_t>(4 + colGaps)) {
+    const uint8_t gap = static_cast<uint8_t>(zone - 4);
+    const int left = slotX[gap] + KEY_W;
+    const int span = slotX[gap + 1] - left;
+    x = static_cast<int16_t>(left + (span > 1 ? random(span) : 0));
+    y = static_cast<int16_t>(random(screenH - STAR_SIZE));
+  } else {
+    const uint8_t gap = static_cast<uint8_t>(zone - 4 - colGaps);
+    const int top = slotY[gap * gridCols] + KEY_H;
+    const int span = slotY[(gap + 1) * gridCols] - top;
+    x = static_cast<int16_t>(random(screenW - STAR_SIZE));
+    y = static_cast<int16_t>(top + (span > 1 ? random(span) : 0));
   }
   if (x < 0) x = 0;
   if (y < 0) y = 0;
-  if (x > SCREEN_W - STAR_SIZE) x = SCREEN_W - STAR_SIZE;
-  if (y > SCREEN_H - STAR_SIZE) y = SCREEN_H - STAR_SIZE;
+  if (x > screenW - STAR_SIZE) x = screenW - STAR_SIZE;
+  if (y > screenH - STAR_SIZE) y = screenH - STAR_SIZE;
 }
 
 // Place in gutters only. forcedZone >= 0 pins the strip for even coverage.
 void placeStarInGutter(StarDot &star, int8_t ignoreIndex, int8_t forcedZone) {
+  const uint8_t zones = starGutterZoneCount();
   for (uint8_t attempt = 0; attempt < 40; attempt++) {
     const uint8_t zone = forcedZone >= 0
       ? static_cast<uint8_t>(forcedZone)
-      : static_cast<uint8_t>(random(7));
+      : static_cast<uint8_t>(random(zones));
     int16_t x = 0;
     int16_t y = 0;
     pickGutterPoint(zone, x, y);
@@ -585,9 +656,12 @@ void placeStarInGutter(StarDot &star, int8_t ignoreIndex, int8_t forcedZone) {
 
 void seedStars() {
   randomSeed(micros() ^ (analogRead(A5) << 16) ^ millis());
+  const uint8_t zones = starGutterZoneCount();
   for (uint8_t i = 0; i < STAR_COUNT; i++) {
     // Round-robin gutters so the field isn't empty on one side / crowded on another.
-    placeStarInGutter(stars[i], static_cast<int8_t>(i), static_cast<int8_t>(i % 7));
+    placeStarInGutter(
+      stars[i], static_cast<int8_t>(i), static_cast<int8_t>(i % zones)
+    );
     assignStarDrift(stars[i]);
     stars[i].shade = static_cast<uint8_t>(i % 3);
   }
@@ -599,7 +673,7 @@ void paintStarBlock(int x, int y, uint16_t color) {
     for (uint8_t dx = 0; dx < STAR_SIZE; dx++) {
       const int px = x + dx;
       const int py = y + dy;
-      if (px < 0 || px >= SCREEN_W || py < 0 || py >= SCREEN_H) continue;
+      if (px < 0 || px >= screenW || py < 0 || py >= screenH) continue;
       if (pointInKeyCell(px, py)) continue;
       gfx->drawPixel(px, py, color);
     }
@@ -638,8 +712,8 @@ void serviceStars(unsigned long now) {
 
     // Near / past the bezel: leave the edge, re-enter in a sparse free gutter.
     if (
-      nx < 0 || nx > SCREEN_W - STAR_SIZE ||
-      ny < 0 || ny > SCREEN_H - STAR_SIZE
+      nx < 0 || nx > screenW - STAR_SIZE ||
+      ny < 0 || ny > screenH - STAR_SIZE
     ) {
       paintStarBlock(ox, oy, bg);
       placeStarInGutter(star, static_cast<int8_t>(i), static_cast<int8_t>(random(7)));
@@ -653,20 +727,20 @@ void serviceStars(unsigned long now) {
       const int16_t tryX = static_cast<int16_t>(star.x - star.dx);
       const int16_t tryY2 = static_cast<int16_t>(star.y - star.dy);
       if (
-        tryX >= 0 && tryX <= SCREEN_W - STAR_SIZE &&
+        tryX >= 0 && tryX <= screenW - STAR_SIZE &&
         !starHitsKey(tryX, ny)
       ) {
         star.dx = static_cast<int8_t>(-star.dx);
         nx = tryX;
       } else if (
-        tryY2 >= 0 && tryY2 <= SCREEN_H - STAR_SIZE &&
+        tryY2 >= 0 && tryY2 <= screenH - STAR_SIZE &&
         !starHitsKey(nx, tryY2)
       ) {
         star.dy = static_cast<int8_t>(-star.dy);
         ny = tryY2;
       } else if (
-        tryX >= 0 && tryX <= SCREEN_W - STAR_SIZE &&
-        tryY2 >= 0 && tryY2 <= SCREEN_H - STAR_SIZE &&
+        tryX >= 0 && tryX <= screenW - STAR_SIZE &&
+        tryY2 >= 0 && tryY2 <= screenH - STAR_SIZE &&
         !starHitsKey(tryX, tryY2)
       ) {
         star.dx = static_cast<int8_t>(-star.dx);
@@ -705,8 +779,8 @@ void serviceStars(unsigned long now) {
       nx = static_cast<int16_t>(star.x + star.dx);
       ny = static_cast<int16_t>(star.y + star.dy);
       if (
-        nx < 0 || nx > SCREEN_W - STAR_SIZE ||
-        ny < 0 || ny > SCREEN_H - STAR_SIZE ||
+        nx < 0 || nx > screenW - STAR_SIZE ||
+        ny < 0 || ny > screenH - STAR_SIZE ||
         starHitsKey(nx, ny) ||
         starCoordsTooClose(nx, ny, static_cast<int8_t>(i))
       ) {
@@ -729,8 +803,8 @@ void serviceStars(unsigned long now) {
         const int16_t tx = static_cast<int16_t>(ox + kTryDx[t]);
         const int16_t ty = static_cast<int16_t>(oy + kTryDy[t]);
         if (
-          tx < 0 || tx > SCREEN_W - STAR_SIZE ||
-          ty < 0 || ty > SCREEN_H - STAR_SIZE ||
+          tx < 0 || tx > screenW - STAR_SIZE ||
+          ty < 0 || ty > screenH - STAR_SIZE ||
           starHitsKey(tx, ty) ||
           starCoordsTooClose(tx, ty, static_cast<int8_t>(i))
         ) {
@@ -812,29 +886,31 @@ void showPressedSlot(uint8_t index) {
     slot.color, config.theme.values[THEME_PRESSED], PRESS_TINT
   );
   const uint16_t textColor = textColorFor(fill);
-  const int x = (SCREEN_W - PRESS_W) / 2;
-  const int y = (SCREEN_H - PRESS_H) / 2;
+  const int pressW = screenW - 60;
+  const int pressH = screenH - 60;
+  const int x = (screenW - pressW) / 2;
+  const int y = (screenH - pressH) / 2;
 
   gfx->fillScreen(config.theme.values[THEME_BACKGROUND]);
-  gfx->fillRoundRect(x, y, PRESS_W, PRESS_H, PRESS_RADIUS, fill);
+  gfx->fillRoundRect(x, y, pressW, pressH, PRESS_RADIUS, fill);
   gfx->drawRoundRect(
-    x, y, PRESS_W, PRESS_H, PRESS_RADIUS, config.theme.values[THEME_ACCENT]
+    x, y, pressW, pressH, PRESS_RADIUS, config.theme.values[THEME_ACCENT]
   );
   gfx->drawRoundRect(
-    x + 3, y + 3, PRESS_W - 6, PRESS_H - 6, PRESS_RADIUS - 3,
+    x + 3, y + 3, pressW - 6, pressH - 6, PRESS_RADIUS - 3,
     config.theme.values[THEME_ACCENT_2]
   );
   readSerial();
 
   if (slotHasIcon[index]) {
     // icon and label centred together
-    const int groupTop = y + (PRESS_H - (ICON_DRAW + 16 + 8 * size)) / 2;
-    drawKeyIcon(index, x + (PRESS_W - ICON_DRAW) / 2, groupTop);
-    drawKeyLabel(label.c_str(), SCREEN_W / 2, groupTop + ICON_DRAW + 16, size, textColor);
+    const int groupTop = y + (pressH - (ICON_DRAW + 16 + 8 * size)) / 2;
+    drawKeyIcon(index, x + (pressW - ICON_DRAW) / 2, groupTop);
+    drawKeyLabel(label.c_str(), screenW / 2, groupTop + ICON_DRAW + 16, size, textColor);
     return;
   }
 
-  drawKeyLabel(label.c_str(), SCREEN_W / 2, y + (PRESS_H - 8 * size) / 2, size, textColor);
+  drawKeyLabel(label.c_str(), screenW / 2, y + (pressH - 8 * size) / 2, size, textColor);
 }
 
 bool timeReached(unsigned long now, unsigned long deadline) {
@@ -1247,6 +1323,45 @@ void endTheme(const String &line) {
   clearThemeTransaction();
 }
 
+void receiveRotate(const String &line) {
+  // CFG_ROTATE\t{txid}\t{0-3}
+  const int firstTab = line.indexOf('\t');
+  const int secondTab = line.indexOf('\t', firstTab + 1);
+  if (firstTab < 0 || secondTab < 0 || line.indexOf('\t', secondTab + 1) >= 0) {
+    Serial.println("CFG_ROTATE_ERR\t-\tBAD_LINE");
+    return;
+  }
+  const String id = line.substring(firstTab + 1, secondTab);
+  const String valueText = line.substring(secondTab + 1);
+  if (!validTransactionId(id)) {
+    Serial.println("CFG_ROTATE_ERR\t-\tBAD_TX");
+    return;
+  }
+  if (
+    valueText.length() != 1 ||
+    valueText.charAt(0) < '0' ||
+    valueText.charAt(0) > '3'
+  ) {
+    Serial.print("CFG_ROTATE_ERR\t");
+    Serial.print(id);
+    Serial.println("\tBAD_VALUE");
+    return;
+  }
+  if (receivingConfig || receivingTheme || iconRecvIndex >= 0) {
+    Serial.print("CFG_ROTATE_ERR\t");
+    Serial.print(id);
+    Serial.println("\tBUSY");
+    return;
+  }
+
+  const uint8_t rotation = static_cast<uint8_t>(valueText.charAt(0) - '0');
+  applyDisplayRotation(rotation);
+  pressedVisible = false;
+  requestFullRedraw();
+  Serial.print("CFG_ROTATE_OK\t");
+  Serial.println(id);
+}
+
 void sendIconError(const String &id, uint8_t index, const char *reason) {
   Serial.print("CFG_ICON_ERR\t");
   if (id.length()) {
@@ -1369,6 +1484,7 @@ void handleSerialLine(const String &line) {
     Serial.println(PROTOCOL_VERSION);
     Serial.println("ADECK_CAPS\tICON");
     Serial.println("ADECK_CAPS\tTHEME");
+    Serial.println("ADECK_CAPS\tROTATE");
     return;
   }
   if (line.startsWith("CFG_BEGIN\t")) {
@@ -1393,6 +1509,10 @@ void handleSerialLine(const String &line) {
   }
   if (line.startsWith("CFG_THEME_END\t")) {
     endTheme(line);
+    return;
+  }
+  if (line.startsWith("CFG_ROTATE\t")) {
+    receiveRotate(line);
     return;
   }
   if (line.startsWith("CFG_ICON_BEGIN\t")) {
@@ -1458,8 +1578,9 @@ void readTouch(unsigned long now) {
   if (touchLatched || !timeReached(now, nextPressAllowed)) return;
   touchLatched = true;
 
-  const int touchX = map(point.y, TS_MINY, TS_MAXY, 320, 0);
-  const int touchY = map(point.x, TS_MINX, TS_MAXX, 240, 0);
+  int touchX = 0;
+  int touchY = 0;
+  mapTouchToScreen(point, touchX, touchY);
   for (uint8_t i = 0; i < TOTAL_APPS; i++) {
     const bool hitX = touchX > slotX[i] && touchX < slotX[i] + APP_W;
     const bool hitY = touchY > slotY[i] && touchY < slotY[i] + APP_H;
@@ -1481,9 +1602,7 @@ void setup() {
   transactionId.reserve(16);
 
   displayReady = gfx->begin();
-  if (displayReady) {
-    gfx->setRotation(1);
-  }
+  applyDisplayRotation(1);
 
   // config first: the panel's first paint is already its theme's background,
   // rather than black followed by a visible flash into the real colour
@@ -1494,6 +1613,7 @@ void setup() {
 
   Serial.println("ADECK_CAPS\tICON");
   Serial.println("ADECK_CAPS\tTHEME");
+  Serial.println("ADECK_CAPS\tROTATE");
   Serial.print("ADECK_READY\t");
   Serial.println(PROTOCOL_VERSION);
 }

@@ -394,6 +394,12 @@ select:focus:not(:focus-visible) { outline: none; }
   background: var(--screen); border: 2px solid #000; padding: 8px; width: 100%;
   aspect-ratio: 4 / 3; display: flex; flex-direction: column; gap: 6px;
 }
+.device-frame.is-portrait { width: min(360px, 100%); }
+.device-screen.is-portrait { aspect-ratio: 3 / 4; }
+/* 180° / 270° — same aspect as 0° / 90°, inverted so the preview matches the TFT. */
+.device-screen.is-flipped {
+  transform: rotate(180deg);
+}
 .screen-chrome {
   display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
   padding: 2px 4px 4px; border-bottom: 1px solid #333; flex-shrink: 0;
@@ -407,12 +413,16 @@ select:focus:not(:focus-visible) { outline: none; }
   font-size: 12px; letter-spacing: 0.12em; color: #e0e0da; flex-shrink: 0; font-weight: 800;
 }
 
-/* Matches the TFT: 3 columns × 2 rows (keys 0–2 top, 3–5 bottom). */
+/* Matches the TFT: 3×2 landscape, 2×3 portrait. */
 .grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   grid-template-rows: repeat(2, minmax(0, 1fr));
   gap: 8px; width: 100%; flex: 1; min-height: 0; overflow: hidden;
+}
+.grid.is-portrait {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-rows: repeat(3, minmax(0, 1fr));
 }
 .slot {
   border: 1px solid #000; background: var(--slot-empty); color: #000;
@@ -849,6 +859,8 @@ select:focus:not(:focus-visible) { outline: none; }
 
 [data-theme="dark"] .bg-color-pick:hover:not(:disabled) { background: var(--hover-bg); }
 [data-theme="dark"] .bg-color-action { background: var(--active-bg); color: var(--active-fg); }
+[data-theme="dark"] .rotate-pick:hover:not(:disabled) { background: var(--hover-bg); }
+[data-theme="dark"] .rotate-pick-deg { background: var(--active-bg); color: var(--accent); }
 
 [data-theme="dark"] .field input::placeholder,
 [data-theme="dark"] .field textarea::placeholder,
@@ -925,6 +937,41 @@ select:focus:not(:focus-visible) { outline: none; }
   letter-spacing: 0.12em;
 }
 
+.rotate-field { margin-top: 2px; }
+.rotate-pick {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--ink);
+  padding: 10px 12px;
+  cursor: pointer;
+  text-align: left;
+}
+.rotate-pick:hover:not(:disabled) { background: var(--bg-2); }
+.rotate-pick:disabled { opacity: 0.45; cursor: not-allowed; }
+.rotate-pick-label {
+  font-size: 14px;
+  letter-spacing: 0.12em;
+  font-weight: 900;
+  color: var(--ink);
+  min-width: 0;
+}
+.rotate-pick-deg {
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  font-weight: 900;
+  color: var(--accent);
+  border: 1px solid var(--line);
+  padding: 6px 10px;
+  background: var(--bg-2);
+  min-width: 3.5em;
+  text-align: center;
+}
+
 #themeModal { z-index: 62; }
 .theme-panel { width: min(940px, 96vw); }
 
@@ -991,6 +1038,16 @@ select:focus:not(:focus-visible) { outline: none; }
   flex-direction: column;
   gap: 8px;
   aspect-ratio: 4 / 3;
+  width: 100%;
+  max-width: 280px;
+  margin: 0 auto;
+}
+.theme-tft.is-portrait {
+  aspect-ratio: 3 / 4;
+  max-width: 210px;
+}
+.theme-tft.is-flipped {
+  transform: rotate(180deg);
 }
 .theme-tft-stars {
   position: absolute;
@@ -1037,6 +1094,10 @@ select:focus:not(:focus-visible) { outline: none; }
   grid-template-rows: repeat(2, 1fr);
   gap: 6px;
   min-height: 0;
+}
+.theme-tft-grid.is-portrait {
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: repeat(3, 1fr);
 }
 .theme-tft-cell {
   display: flex;

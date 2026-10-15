@@ -95,7 +95,7 @@
       </div>
 
       <div class="device-stage">
-        <div class="device-frame" role="img" aria-label="ADeck hardware preview">
+        <div class="device-frame" id="deviceFrame" role="img" aria-label="ADeck hardware preview" data-rotation="1">
           <div class="device-bezel">
             <div class="bezel-screw bezel-screw-tl" aria-hidden="true"></div>
             <div class="bezel-screw bezel-screw-tr" aria-hidden="true"></div>
@@ -171,6 +171,14 @@
           </button>
           <input type="color" id="customColorInput" class="custom-color-input" value="#080d0e" tabindex="-1" aria-hidden="true" />
           <span class="field-hint mono muted">Fills the empty space behind icons on the whole device screen</span>
+        </div>
+
+        <div class="field rotate-field">
+          <button type="button" id="rotateBtn" class="rotate-pick" title="Rotate the TFT display">
+            <span class="rotate-pick-label mono">ROTATE DISPLAY</span>
+            <span id="rotateBtnDeg" class="rotate-pick-deg mono">0°</span>
+          </button>
+          <span class="field-hint mono muted">Cycles 0° → 90° → 180° → 270° on the TFT</span>
         </div>
 
         <div class="editor-foot">
@@ -561,7 +569,7 @@
           <div class="theme-preview-head">
             <span class="mono muted">PREVIEW</span>
           </div>
-          <div class="theme-tft" id="themeTft" role="img" aria-label="Preview of the deck's screen">
+          <div class="theme-tft" id="themeTft" role="img" aria-label="Preview of the deck's screen" data-rotation="1">
             <div class="theme-tft-chrome">
               <span class="mono">ADECK</span>
             </div>
