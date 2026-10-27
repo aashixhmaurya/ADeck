@@ -74,7 +74,7 @@ const uint8_t BG_EFFECT_STARS = 1;
 const uint8_t STAR_COUNT = 16;
 const uint8_t STAR_SIZE = 2;
 const uint8_t STAR_MIN_SEP = 34;
-const unsigned long STAR_FRAME_MS = 55;
+const unsigned long STAR_FRAME_MS = 80;
 
 const uint8_t SELECTED_MIX = 100;
 
@@ -540,9 +540,19 @@ bool pointInKeyCell(int x, int y) {
 }
 
 
+bool starsOnLightBackground() {
+  return textColorFor(config.theme.values[THEME_BACKGROUND]) == 0x0000;
+}
+
+uint8_t activeStarSize() {
+  return starsOnLightBackground() ? 3 : STAR_SIZE;
+}
+
 bool starHitsKey(int x, int y) {
-  for (uint8_t dy = 0; dy < STAR_SIZE; dy++) {
-    for (uint8_t dx = 0; dx < STAR_SIZE; dx++) {
+  const uint8_t w = starsOnLightBackground() ? 2 : STAR_SIZE;
+  const uint8_t h = starsOnLightBackground() ? 3 : STAR_SIZE;
+  for (uint8_t dy = 0; dy < h; dy++) {
+    for (uint8_t dx = 0; dx < w; dx++) {
       if (pointInKeyCell(x + dx, y + dy)) return true;
     }
   }
@@ -550,6 +560,7 @@ bool starHitsKey(int x, int y) {
 }
 
 uint16_t starShadeColor(uint8_t shade) {
+  if (starsOnLightBackground()) return 0x0000;
   if (shade == 0) return 0xFFFF;
   if (shade == 1) return 0xDEFB;
   return 0xC618;
@@ -588,44 +599,45 @@ uint8_t starGutterZoneCount() {
 
 void pickGutterPoint(uint8_t zone, int16_t &x, int16_t &y) {
   const uint8_t zones = starGutterZoneCount();
+  const uint8_t size = activeStarSize();
   zone = static_cast<uint8_t>(zone % (zones ? zones : 1));
   const uint8_t colGaps = gridCols > 1 ? static_cast<uint8_t>(gridCols - 1) : 0;
 
   if (zone == 0) {
-    x = static_cast<int16_t>(random(screenW - STAR_SIZE));
+    x = static_cast<int16_t>(random(screenW - size));
     y = static_cast<int16_t>(random(max(1, slotY[0])));
   } else if (zone == 1) {
     const int bottom = slotY[TOTAL_APPS - 1] + KEY_H;
-    x = static_cast<int16_t>(random(screenW - STAR_SIZE));
+    x = static_cast<int16_t>(random(screenW - size));
     y = static_cast<int16_t>(
-      bottom + random(max(1, screenH - bottom - STAR_SIZE + 1))
+      bottom + random(max(1, screenH - bottom - size + 1))
     );
   } else if (zone == 2) {
     x = static_cast<int16_t>(random(max(1, slotX[0])));
-    y = static_cast<int16_t>(random(screenH - STAR_SIZE));
+    y = static_cast<int16_t>(random(screenH - size));
   } else if (zone == 3) {
     const int right = slotX[gridCols - 1] + KEY_W;
     x = static_cast<int16_t>(
-      right + random(max(1, screenW - right - STAR_SIZE + 1))
+      right + random(max(1, screenW - right - size + 1))
     );
-    y = static_cast<int16_t>(random(screenH - STAR_SIZE));
+    y = static_cast<int16_t>(random(screenH - size));
   } else if (zone < static_cast<uint8_t>(4 + colGaps)) {
     const uint8_t gap = static_cast<uint8_t>(zone - 4);
     const int left = slotX[gap] + KEY_W;
     const int span = slotX[gap + 1] - left;
     x = static_cast<int16_t>(left + (span > 1 ? random(span) : 0));
-    y = static_cast<int16_t>(random(screenH - STAR_SIZE));
+    y = static_cast<int16_t>(random(screenH - size));
   } else {
     const uint8_t gap = static_cast<uint8_t>(zone - 4 - colGaps);
     const int top = slotY[gap * gridCols] + KEY_H;
     const int span = slotY[(gap + 1) * gridCols] - top;
-    x = static_cast<int16_t>(random(screenW - STAR_SIZE));
+    x = static_cast<int16_t>(random(screenW - size));
     y = static_cast<int16_t>(top + (span > 1 ? random(span) : 0));
   }
   if (x < 0) x = 0;
   if (y < 0) y = 0;
-  if (x > screenW - STAR_SIZE) x = screenW - STAR_SIZE;
-  if (y > screenH - STAR_SIZE) y = screenH - STAR_SIZE;
+  if (x > screenW - size) x = screenW - size;
+  if (y > screenH - size) y = screenH - size;
 }
 
 
@@ -667,8 +679,19 @@ void seedStars() {
 }
 
 void paintStarBlock(int x, int y, uint16_t color) {
-  for (uint8_t dy = 0; dy < STAR_SIZE; dy++) {
-    for (uint8_t dx = 0; dx < STAR_SIZE; dx++) {
+  const uint8_t w = starsOnLightBackground() ? 2 : STAR_SIZE;
+  const uint8_t h = starsOnLightBackground() ? 3 : STAR_SIZE;
+  if (
+    starsOnLightBackground() &&
+    x >= 0 && y >= 0 &&
+    x + w <= screenW && y + h <= screenH &&
+    !starHitsKey(x, y)
+  ) {
+    gfx->fillRect(x, y, w, h, color);
+    return;
+  }
+  for (uint8_t dy = 0; dy < h; dy++) {
+    for (uint8_t dx = 0; dx < w; dx++) {
       const int px = x + dx;
       const int py = y + dy;
       if (px < 0 || px >= screenW || py < 0 || py >= screenH) continue;
