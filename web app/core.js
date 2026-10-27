@@ -52,13 +52,13 @@ const APPEARANCE_IDS = ["classic", "red-and-red", "3", "4"];
 const APPEARANCE_LABELS = {
   classic: "CLASSIC",
   "red-and-red": "RED AND RED",
-  "3": "3",
+  "3": "CODE CACTUS",
   "4": "4",
 };
 const APPEARANCE_INFO = {
   classic: { name: "CLASSIC", description: "Current ADeck web colours." },
   "red-and-red": { name: "RED AND RED", description: "Dark panels, red selection, red accent." },
-  "3": { name: "3", description: "Reserved." },
+  "3": { name: "CODE CACTUS", description: "Cream page, rose selection, soft panels." },
   "4": { name: "4", description: "Reserved." },
 };
 const CLASSIC_WEB = {
@@ -147,6 +147,62 @@ const RED_AND_RED_PALETTE = {
 const RED_AND_RED_WEB = {
   light: RED_AND_RED_PALETTE,
   dark: RED_AND_RED_PALETTE,
+};
+const ROSE_PINE_DAWN_WEB = {
+  light: {
+    "--bg": "#fcf2e9",
+    "--bg-2": "#f2e9e0",
+    "--bg-3": "#e2d9d2",
+    "--ink": "#1f3d22",
+    "--ink-2": "#2f5c3a",
+    "--muted": "#4a6b52",
+    "--line": "#d5e0d4",
+    "--accent": "#2f7a4a",
+    "--sage": "#2f7a4a",
+    "--danger": "#aa586f",
+    "--ok": "#2f7a4a",
+    "--slot-empty": "#d5e0d4",
+    "--screen": "#191724",
+    "--bezel": "#26233a",
+    "--bezel-edge": "#3b4054",
+    "--panel-focus": "#fbf4ec",
+    "--on-dark": "#fcf2e9",
+    "--code-bg": "#fffaf3",
+    "--code-fg": "#1f3d22",
+    "--toast-shadow": "#1f3d22",
+    "--active-bg": "#2f7a4a",
+    "--active-fg": "#fcf2e9",
+    "--hover-bg": "#dce8dc",
+    "--btn-solid-bg": "#2f7a4a",
+    "--btn-solid-fg": "#fcf2e9",
+  },
+  dark: {
+    "--bg": "#191724",
+    "--bg-2": "#1f1d2e",
+    "--bg-3": "#26233a",
+    "--ink": "#b8e0c0",
+    "--ink-2": "#8fbf96",
+    "--muted": "#6e8a72",
+    "--line": "#403d52",
+    "--accent": "#7dce82",
+    "--sage": "#7dce82",
+    "--danger": "#eb6f92",
+    "--ok": "#7dce82",
+    "--slot-empty": "#403d52",
+    "--screen": "#0f0e14",
+    "--bezel": "#191724",
+    "--bezel-edge": "#403d52",
+    "--panel-focus": "#26233a",
+    "--on-dark": "#e8f6ea",
+    "--code-bg": "#0f0e14",
+    "--code-fg": "#b8e0c0",
+    "--toast-shadow": "#000000",
+    "--active-bg": "#2f7a4a",
+    "--active-fg": "#e8f6ea",
+    "--hover-bg": "#26233a",
+    "--btn-solid-bg": "#2f7a4a",
+    "--btn-solid-fg": "#e8f6ea",
+  },
 };
 
 const DEFAULT_SETTINGS = {
@@ -798,6 +854,7 @@ function appearancePalette(id, mode) {
   const key = normalizeAppearance(id);
   const resolved = mode === "dark" ? "dark" : "light";
   if (key === "red-and-red") return RED_AND_RED_WEB[resolved];
+  if (key === "3") return ROSE_PINE_DAWN_WEB[resolved];
   return CLASSIC_WEB[resolved];
 }
 

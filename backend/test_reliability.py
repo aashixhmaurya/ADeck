@@ -1138,6 +1138,8 @@ class ReliabilityTests(unittest.TestCase):
         self.assertIn("appearanceModal", page)
         self.assertIn("red-and-red", script)
         self.assertIn("RED AND RED", script)
+        self.assertIn("CODE CACTUS", script)
+        self.assertIn("ROSE_PINE_DAWN", script)
         self.assertIn("rotateBtn", page)
         self.assertIn(".theme-card", style)
         self.assertIn(".appearance-preview-stage", style)
