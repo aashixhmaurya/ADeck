@@ -443,49 +443,63 @@
   color: var(--muted);
 }
 
-[data-theme="dark"] .nav-btn.active {
+[data-theme="dark"] .nav-btn.active,
+[data-web-appearance="red-and-red"] .nav-btn.active {
   background: var(--active-bg);
   color: var(--active-fg);
   box-shadow: inset 0 -2px 0 var(--accent);
 }
 
-[data-theme="dark"] .nav-btn:hover:not(.active) { background: var(--hover-bg); }
+[data-theme="dark"] .nav-btn:hover:not(.active),
+[data-web-appearance="red-and-red"] .nav-btn:hover:not(.active) { background: var(--hover-bg); }
 
 [data-theme="dark"] .theme-toggle:hover,
-[data-theme="dark"] .theme-toggle[aria-pressed="true"] {
+[data-theme="dark"] .theme-toggle[aria-pressed="true"],
+[data-web-appearance="red-and-red"] .theme-toggle:hover,
+[data-web-appearance="red-and-red"] .theme-toggle[aria-pressed="true"] {
   background: var(--active-bg);
   color: var(--active-fg);
   border-color: var(--accent);
 }
 
-[data-theme="dark"] .profile-list li:hover { background: var(--hover-bg); }
-[data-theme="dark"] .profile-list li.active {
+[data-theme="dark"] .profile-list li:hover,
+[data-web-appearance="red-and-red"] .profile-list li:hover { background: var(--hover-bg); }
+[data-theme="dark"] .profile-list li.active,
+[data-web-appearance="red-and-red"] .profile-list li.active {
   background: var(--active-bg);
   color: var(--active-fg);
   box-shadow: inset 3px 0 0 var(--accent);
 }
 
 [data-theme="dark"] .ghost-btn:hover:not(:disabled),
-[data-theme="dark"] .icon-btn:hover:not(:disabled) {
+[data-theme="dark"] .icon-btn:hover:not(:disabled),
+[data-web-appearance="red-and-red"] .ghost-btn:hover:not(:disabled),
+[data-web-appearance="red-and-red"] .icon-btn:hover:not(:disabled) {
   background: var(--hover-bg);
   color: var(--ink);
 }
 
-[data-theme="dark"] .save-btn {
+[data-theme="dark"] .save-btn,
+[data-web-appearance="red-and-red"] .save-btn {
   background: var(--btn-solid-bg);
   color: var(--btn-solid-fg);
   border-color: var(--line);
 }
-[data-theme="dark"] .save-btn:hover:not(:disabled) {
+[data-theme="dark"] .save-btn:hover:not(:disabled),
+[data-web-appearance="red-and-red"] .save-btn:hover:not(:disabled) {
   background: var(--accent);
-  color: #1a1a18;
+  color: var(--active-fg);
   border-color: var(--accent);
 }
 
-[data-theme="dark"] .bg-color-pick:hover:not(:disabled) { background: var(--hover-bg); }
-[data-theme="dark"] .bg-color-action { background: var(--active-bg); color: var(--active-fg); }
-[data-theme="dark"] .rotate-pick:hover:not(:disabled) { background: var(--hover-bg); }
-[data-theme="dark"] .rotate-pick-deg { background: var(--active-bg); color: var(--accent); }
+[data-theme="dark"] .bg-color-pick:hover:not(:disabled),
+[data-web-appearance="red-and-red"] .bg-color-pick:hover:not(:disabled) { background: var(--hover-bg); }
+[data-theme="dark"] .bg-color-action,
+[data-web-appearance="red-and-red"] .bg-color-action { background: var(--active-bg); color: var(--active-fg); }
+[data-theme="dark"] .rotate-pick:hover:not(:disabled),
+[data-web-appearance="red-and-red"] .rotate-pick:hover:not(:disabled) { background: var(--hover-bg); }
+[data-theme="dark"] .rotate-pick-deg,
+[data-web-appearance="red-and-red"] .rotate-pick-deg { background: var(--active-bg); color: var(--active-fg); }
 
 [data-theme="dark"] .field input::placeholder,
 [data-theme="dark"] .field textarea::placeholder,
@@ -586,7 +600,7 @@
   font-size: 12px;
   letter-spacing: 0.16em;
   font-weight: 900;
-  color: var(--accent);
+  color: var(--ink);
   border: 1px solid var(--line);
   padding: 6px 10px;
   background: var(--bg-2);

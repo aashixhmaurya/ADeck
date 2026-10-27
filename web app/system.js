@@ -1039,7 +1039,7 @@ function wireEvents() {
     els.settingTheme.addEventListener("change", (e) => {
       applyTheme(e.target.value);
       persistSettings();
-      toast(e.target.value === "dark" ? "DARK MODE" : "LIGHT MODE", "info");
+      toast(state.settings.theme === "dark" ? "DARK MODE" : "LIGHT MODE", "info");
     });
   }
   if (els.settingAppearance) {

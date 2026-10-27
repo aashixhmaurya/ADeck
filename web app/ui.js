@@ -817,7 +817,7 @@ function closeJsonModal() {
 
 
 const themeModal = { open: false, selectedId: null, savedId: null, previousFocus: null };
-const appearanceModal = { open: false, selectedId: null, savedId: null, previousFocus: null };
+const appearanceModal = { open: false, selectedId: null, savedId: null, savedTheme: null, previousFocus: null };
 
 function renderThemeCards() {
   if (!els.themeList) return;
@@ -1038,7 +1038,8 @@ function selectAppearancePreview(id) {
   const next = normalizeAppearance(id);
   if (next === appearanceModal.selectedId) return;
   appearanceModal.selectedId = next;
-  applyActiveDeckTheme();
+  if (appearanceForcesDark(next)) applyTheme("dark", false);
+  else applyTheme(appearanceModal.savedTheme || state.settings.theme, false);
   renderAppearanceCards();
   renderAppearancePreview();
 }
@@ -1047,6 +1048,7 @@ function openAppearanceModal() {
   if (!els.appearanceModal) return;
   appearanceModal.previousFocus = document.activeElement;
   appearanceModal.savedId = normalizeAppearance(state.settings.appearance);
+  appearanceModal.savedTheme = state.settings.theme === "dark" ? "dark" : "light";
   appearanceModal.selectedId = appearanceModal.savedId;
   appearanceModal.open = true;
   els.appearanceModal.hidden = false;
@@ -1060,7 +1062,8 @@ function closeAppearanceModal() {
   appearanceModal.open = false;
   els.appearanceModal.hidden = true;
   appearanceModal.selectedId = appearanceModal.savedId;
-  applyActiveDeckTheme();
+  applyTheme(appearanceModal.savedTheme || state.settings.theme, false);
+  appearanceModal.savedTheme = null;
   if (els.appearanceBtn) els.appearanceBtn.setAttribute("aria-expanded", "false");
   if (appearanceModal.previousFocus && appearanceModal.previousFocus.focus) {
     appearanceModal.previousFocus.focus();
@@ -1076,9 +1079,11 @@ function applySelectedAppearance() {
   appearanceModal.open = false;
   els.appearanceModal.hidden = true;
   appearanceModal.savedId = next;
+  appearanceModal.savedTheme = null;
   appearanceModal.previousFocus = null;
+  if (appearanceForcesDark(next)) applyTheme("dark", false);
+  else applyActiveDeckTheme();
   persistSettings();
-  applyActiveDeckTheme();
   if (els.appearanceBtn) els.appearanceBtn.setAttribute("aria-expanded", "false");
   toast(
     changed ? "APPEARANCE " + appearanceLabel(next) : "APPEARANCE UNCHANGED",

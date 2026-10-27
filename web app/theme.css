@@ -223,6 +223,7 @@ select:focus:not(:focus-visible) { outline: none; }
 .theme-toggle {
   display: inline-flex;
   align-items: center;
+  flex-shrink: 0;
   gap: 8px;
   border: 1px solid var(--line);
   background: var(--bg);
@@ -232,6 +233,7 @@ select:focus:not(:focus-visible) { outline: none; }
   font-size: 13px;
   font-weight: 800;
   letter-spacing: 0.14em;
+  white-space: nowrap;
 }
 .theme-toggle:hover,
 .theme-toggle[aria-pressed="true"] { background: var(--ink); color: var(--bg); }

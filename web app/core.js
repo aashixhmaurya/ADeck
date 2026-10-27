@@ -53,13 +53,13 @@ const APPEARANCE_LABELS = {
   classic: "CLASSIC",
   "red-and-red": "RED AND RED",
   "3": "CODE CACTUS",
-  "4": "4",
+  "4": "OLED",
 };
 const APPEARANCE_INFO = {
   classic: { name: "CLASSIC", description: "Current ADeck web colours." },
   "red-and-red": { name: "RED AND RED", description: "Dark panels, red selection, red accent." },
   "3": { name: "CODE CACTUS", description: "Cream page, rose selection, soft panels." },
-  "4": { name: "4", description: "Reserved." },
+  "4": { name: "OLED", description: "Pure black, dark blue. Dark only." },
 };
 const CLASSIC_WEB = {
   light: {
@@ -145,7 +145,16 @@ const RED_AND_RED_PALETTE = {
   "--btn-solid-fg": "#ffe8f0",
 };
 const RED_AND_RED_WEB = {
-  light: RED_AND_RED_PALETTE,
+  light: Object.assign({}, RED_AND_RED_PALETTE, {
+    "--bg": "#38282a",
+    "--bg-2": "#443336",
+    "--bg-3": "#524044",
+    "--line": "#524044",
+    "--slot-empty": "#524446",
+    "--panel-focus": "#473c3d",
+    "--hover-bg": "#473c3d",
+    "--bezel-edge": "#473c3d",
+  }),
   dark: RED_AND_RED_PALETTE,
 };
 const ROSE_PINE_DAWN_WEB = {
@@ -203,6 +212,37 @@ const ROSE_PINE_DAWN_WEB = {
     "--btn-solid-bg": "#2f7a4a",
     "--btn-solid-fg": "#e8f6ea",
   },
+};
+const OLED_PALETTE = {
+  "--bg": "#000000",
+  "--bg-2": "#000000",
+  "--bg-3": "#000000",
+  "--ink": "#e8eef8",
+  "--ink-2": "#c5d0e0",
+  "--muted": "#6b7a90",
+  "--line": "#122033",
+  "--accent": "#163a6b",
+  "--sage": "#1a4a80",
+  "--danger": "#c97860",
+  "--ok": "#1a4a80",
+  "--slot-empty": "#000000",
+  "--screen": "#000000",
+  "--bezel": "#000000",
+  "--bezel-edge": "#122033",
+  "--panel-focus": "#000000",
+  "--on-dark": "#e8eef8",
+  "--code-bg": "#000000",
+  "--code-fg": "#e8eef8",
+  "--toast-shadow": "#000000",
+  "--active-bg": "#163a6b",
+  "--active-fg": "#e8eef8",
+  "--hover-bg": "#000000",
+  "--btn-solid-bg": "#163a6b",
+  "--btn-solid-fg": "#e8eef8",
+};
+const OLED_WEB = {
+  light: OLED_PALETTE,
+  dark: OLED_PALETTE,
 };
 
 const DEFAULT_SETTINGS = {
@@ -605,12 +645,14 @@ function hydrateConfig(config) {
   state.profiles = profiles;
   state.activeProfileId = active.id;
   state.activeSlotIndex = 0;
+  const keptAppearance = normalizeAppearance(state.settings.appearance);
   if (config.settings && typeof config.settings === "object") {
     state.settings = { ...state.settings, ...config.settings };
     const defaultName = config.settings.defaultProfile;
     const defaultProfile = profiles.find((profile) => profile.name === defaultName);
     if (defaultProfile) state.settings.defaultProfileId = defaultProfile.id;
   }
+  state.settings.appearance = keptAppearance;
   persistProfiles();
   persistSettings();
   return true;
@@ -619,10 +661,20 @@ function hydrateConfig(config) {
 function loadSettings() {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
-    if (!raw) return;
-    state.settings = { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
-    state.settings.appearance = normalizeAppearance(state.settings.appearance);
-  } catch (_) {}
+    if (!raw) {
+      state.settings.appearance = DEFAULT_APPEARANCE_ID;
+      return;
+    }
+    const parsed = JSON.parse(raw);
+    const stored = parsed && typeof parsed === "object" ? parsed : {};
+    state.settings = { ...DEFAULT_SETTINGS, ...stored };
+    state.settings.appearance =
+      Object.prototype.hasOwnProperty.call(stored, "appearance")
+        ? normalizeAppearance(stored.appearance)
+        : DEFAULT_APPEARANCE_ID;
+  } catch (_) {
+    state.settings.appearance = DEFAULT_APPEARANCE_ID;
+  }
 }
 
 function persistSettings() {
@@ -850,11 +902,16 @@ function appearanceList() {
   }));
 }
 
+function appearanceForcesDark(id) {
+  return normalizeAppearance(id) === "4";
+}
+
 function appearancePalette(id, mode) {
   const key = normalizeAppearance(id);
   const resolved = mode === "dark" ? "dark" : "light";
   if (key === "red-and-red") return RED_AND_RED_WEB[resolved];
   if (key === "3") return ROSE_PINE_DAWN_WEB[resolved];
+  if (key === "4") return OLED_WEB[resolved];
   return CLASSIC_WEB[resolved];
 }
 
@@ -880,8 +937,12 @@ function updateAppearanceUi() {
 
 function applyAppearance(id) {
   state.settings.appearance = normalizeAppearance(id);
+  if (appearanceForcesDark(state.settings.appearance)) {
+    applyTheme("dark");
+  } else {
+    applyActiveDeckTheme();
+  }
   persistSettings();
-  applyActiveDeckTheme();
   toast("APPEARANCE " + appearanceLabel(state.settings.appearance), "info");
 }
 
@@ -969,7 +1030,8 @@ function afterSlotFieldEdit() {
 }
 
 function applyTheme(theme, animate = true) {
-  const mode = theme === "dark" ? "dark" : "light";
+  let mode = theme === "dark" ? "dark" : "light";
+  if (appearanceForcesDark(activeAppearanceId())) mode = "dark";
   state.settings.theme = mode;
   if (animate) {
     document.body.classList.add("theme-switching");
@@ -996,6 +1058,6 @@ function toggleTheme() {
   const next = state.settings.theme === "dark" ? "light" : "dark";
   applyTheme(next);
   persistSettings();
-  toast(next === "dark" ? "DARK MODE" : "LIGHT MODE", "info");
+  toast(state.settings.theme === "dark" ? "DARK MODE" : "LIGHT MODE", "info");
 }
 
