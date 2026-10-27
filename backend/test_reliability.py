@@ -1121,6 +1121,9 @@ class ReliabilityTests(unittest.TestCase):
         for token in (
             '"/api/themes"',
             "applyDeckTheme",
+            "normalizeAppearance",
+            "applyAppearance",
+            "data-web-appearance",
             "normalizeThemeId",
             "data-deck-theme",
             "themeId",
@@ -1131,8 +1134,13 @@ class ReliabilityTests(unittest.TestCase):
             self.assertIn(token, script, token)
         self.assertIn("themeModal", page)
         self.assertIn("themeBtn", page)
+        self.assertIn("appearanceBtn", page)
+        self.assertIn("appearanceModal", page)
+        self.assertIn("red-and-red", script)
+        self.assertIn("RED AND RED", script)
         self.assertIn("rotateBtn", page)
         self.assertIn(".theme-card", style)
+        self.assertIn(".appearance-preview-stage", style)
         self.assertIn(".theme-tft", style)
         self.assertIn(".grid.is-portrait", style)
         self.assertIn(".theme-tft.is-portrait", style)

@@ -34,6 +34,10 @@
     </nav>
 
     <div class="topbar-meta" aria-live="polite">
+      <button type="button" id="appearanceBtn" class="theme-toggle" title="Appearance: CLASSIC" aria-label="Choose web appearance" aria-haspopup="dialog" aria-expanded="false" aria-controls="appearanceModal">
+        <span>APPEARANCE</span>
+        <span id="appearanceBtnName">CLASSIC</span>
+      </button>
       <button type="button" id="themeToggleBtn" class="theme-toggle" title="Toggle light / dark mode" aria-label="Toggle light and dark mode" aria-pressed="false">
         <span class="theme-toggle-icon" aria-hidden="true">◐</span>
         <span id="themeToggleLabel">LIGHT</span>
@@ -336,6 +340,16 @@
             <span class="field-hint mono muted">Also available from the top bar LIGHT / DARK control</span>
           </label>
           <label class="field">
+            <span class="field-label">APPEARANCE</span>
+            <select id="settingAppearance" name="appearance">
+              <option value="classic">Classic</option>
+              <option value="red-and-red">Red and red</option>
+              <option value="3">3</option>
+              <option value="4">4</option>
+            </select>
+            <span class="field-hint mono muted">Also available from the top bar APPEARANCE control. Colours only.</span>
+          </label>
+          <label class="field">
             <span class="field-label">LANGUAGE</span>
             <select id="settingLanguage" name="language">
               <option value="en">English</option>
@@ -584,6 +598,42 @@
         <div class="btn-row">
           <button type="button" id="themeCancelBtn" class="ghost-btn">CANCEL</button>
           <button type="button" id="themeApplyBtn" class="save-btn">APPLY THEME</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="appearanceModal" hidden role="dialog" aria-modal="true" aria-labelledby="appearanceModalTitle">
+    <div class="modal-panel modal-panel-wide theme-panel">
+      <div class="modal-head">
+        <div class="modal-title-block">
+          <h3 id="appearanceModalTitle">APPEARANCE</h3>
+          <span class="mono muted modal-kicker">WEB COLOURS</span>
+        </div>
+      </div>
+
+      <div class="theme-body">
+        <div id="appearanceList" class="theme-list" role="radiogroup" aria-label="Appearances"></div>
+
+        <aside class="theme-preview" aria-label="Appearance preview">
+          <div class="theme-preview-head">
+            <span class="mono muted">PREVIEW</span>
+          </div>
+          <div class="appearance-preview-stage" id="appearancePreview" role="img" aria-label="Preview of web colours">
+            <div class="appearance-preview-bar">
+              <span class="mono">DASHBOARD</span>
+              <span class="appearance-preview-dots" aria-hidden="true"></span>
+            </div>
+            <div class="appearance-preview-track"><i></i></div>
+          </div>
+        </aside>
+      </div>
+
+      <div class="modal-foot theme-foot">
+        <span class="mono muted" id="appearanceStatus">—</span>
+        <div class="btn-row">
+          <button type="button" id="appearanceCancelBtn" class="ghost-btn">CANCEL</button>
+          <button type="button" id="appearanceApplyBtn" class="save-btn">APPLY</button>
         </div>
       </div>
     </div>

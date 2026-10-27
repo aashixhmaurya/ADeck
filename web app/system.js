@@ -1027,11 +1027,24 @@ function wireEvents() {
   els.settingsSaveBtn.addEventListener("click", saveSettings);
   els.settingsResetBtn.addEventListener("click", resetSettings);
   if (els.themeToggleBtn) els.themeToggleBtn.addEventListener("click", toggleTheme);
+  if (els.appearanceBtn) els.appearanceBtn.addEventListener("click", openAppearanceModal);
+  if (els.appearanceApplyBtn) els.appearanceApplyBtn.addEventListener("click", applySelectedAppearance);
+  if (els.appearanceCancelBtn) els.appearanceCancelBtn.addEventListener("click", closeAppearanceModal);
+  if (els.appearanceModal) {
+    els.appearanceModal.addEventListener("click", (e) => {
+      if (e.target === els.appearanceModal) closeAppearanceModal();
+    });
+  }
   if (els.settingTheme) {
     els.settingTheme.addEventListener("change", (e) => {
       applyTheme(e.target.value);
       persistSettings();
       toast(e.target.value === "dark" ? "DARK MODE" : "LIGHT MODE", "info");
+    });
+  }
+  if (els.settingAppearance) {
+    els.settingAppearance.addEventListener("change", (e) => {
+      applyAppearance(e.target.value);
     });
   }
 
@@ -1053,6 +1066,11 @@ function onGlobalKeydown(e) {
     if (themeModal.open) {
       e.preventDefault();
       closeThemeModal();
+      return;
+    }
+    if (appearanceModal.open) {
+      e.preventDefault();
+      closeAppearanceModal();
       return;
     }
     if (isAppPickerOpen()) {

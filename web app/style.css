@@ -595,7 +595,49 @@
 }
 
 #themeModal { z-index: 62; }
+#appearanceModal { z-index: 62; }
 .theme-panel { width: min(940px, 96vw); }
+.appearance-preview-stage {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--preview-line, var(--line));
+  background: var(--preview-bg, var(--bg-2));
+}
+.appearance-preview-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--preview-bar, var(--bg));
+  color: var(--preview-ink, var(--ink));
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  font-weight: 800;
+}
+.appearance-preview-dots {
+  width: 72px;
+  height: 6px;
+  background: linear-gradient(
+    90deg,
+    #3b82f6 0 25%,
+    #eab308 25% 50%,
+    #22c55e 50% 75%,
+    #06b6d4 75% 100%
+  );
+}
+.appearance-preview-track {
+  height: 8px;
+  background: var(--preview-track, var(--bg));
+}
+.appearance-preview-track i {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--preview-accent, var(--accent));
+}
 
 .theme-body {
   display: grid;

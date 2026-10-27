@@ -47,8 +47,111 @@ const ARROW_DELTA = {
   ArrowRight: 1,
 };
 
+const DEFAULT_APPEARANCE_ID = "classic";
+const APPEARANCE_IDS = ["classic", "red-and-red", "3", "4"];
+const APPEARANCE_LABELS = {
+  classic: "CLASSIC",
+  "red-and-red": "RED AND RED",
+  "3": "3",
+  "4": "4",
+};
+const APPEARANCE_INFO = {
+  classic: { name: "CLASSIC", description: "Current ADeck web colours." },
+  "red-and-red": { name: "RED AND RED", description: "Dark panels, red selection, red accent." },
+  "3": { name: "3", description: "Reserved." },
+  "4": { name: "4", description: "Reserved." },
+};
+const CLASSIC_WEB = {
+  light: {
+    "--bg": "#f2f1ee",
+    "--bg-2": "#e4e3df",
+    "--bg-3": "#cecdc8",
+    "--ink": "#000000",
+    "--ink-2": "#000000",
+    "--muted": "#111111",
+    "--line": "#000000",
+    "--accent": "#6b4a12",
+    "--sage": "#1f3d22",
+    "--danger": "#7a1208",
+    "--ok": "#1f3d22",
+    "--slot-empty": "#b8b7b2",
+    "--screen": "#0e0e0d",
+    "--bezel": "#1a1a18",
+    "--bezel-edge": "#3a3a37",
+    "--panel-focus": "#ffffff",
+    "--on-dark": "#f2f1ee",
+    "--code-bg": "#0a0a0a",
+    "--code-fg": "#ecebe6",
+    "--toast-shadow": "#000000",
+    "--active-bg": "#e8e7e2",
+    "--active-fg": "#000000",
+    "--hover-bg": "#ecebe6",
+    "--btn-solid-bg": "#111111",
+    "--btn-solid-fg": "#f2f1ee",
+  },
+  dark: {
+    "--bg": "#181816",
+    "--bg-2": "#222220",
+    "--bg-3": "#2c2c28",
+    "--ink": "#e4e2dc",
+    "--ink-2": "#cac8c0",
+    "--muted": "#8e8c84",
+    "--line": "#3d3d38",
+    "--accent": "#d4a843",
+    "--sage": "#9aab7a",
+    "--danger": "#c97860",
+    "--ok": "#9aab7a",
+    "--slot-empty": "#454540",
+    "--screen": "#0a0a09",
+    "--bezel": "#121210",
+    "--bezel-edge": "#333330",
+    "--panel-focus": "#262624",
+    "--on-dark": "#e4e2dc",
+    "--code-bg": "#0e0e0c",
+    "--code-fg": "#e4e2dc",
+    "--toast-shadow": "#000000",
+    "--active-bg": "#2a2a27",
+    "--active-fg": "#f0ede6",
+    "--hover-bg": "#242422",
+    "--btn-solid-bg": "#353532",
+    "--btn-solid-fg": "#f0ede6",
+  },
+};
+const RED_AND_RED_PALETTE = {
+  "--bg": "#1f1617",
+  "--bg-2": "#2a2021",
+  "--bg-3": "#3a2a2d",
+  "--ink": "#f6f1f7",
+  "--ink-2": "#fdf5f2",
+  "--muted": "#655659",
+  "--line": "#3a2a2d",
+  "--accent": "#c8384f",
+  "--sage": "#d7ff6a",
+  "--danger": "#ec364f",
+  "--ok": "#d7ff6a",
+  "--slot-empty": "#3a3031",
+  "--screen": "#090b0a",
+  "--bezel": "#151112",
+  "--bezel-edge": "#2f2526",
+  "--panel-focus": "#2f2526",
+  "--on-dark": "#f6f1f7",
+  "--code-bg": "#151112",
+  "--code-fg": "#f6f1f7",
+  "--toast-shadow": "#000000",
+  "--active-bg": "#c8384f",
+  "--active-fg": "#ffe8f0",
+  "--hover-bg": "#2f2526",
+  "--btn-solid-bg": "#c8384f",
+  "--btn-solid-fg": "#ffe8f0",
+};
+const RED_AND_RED_WEB = {
+  light: RED_AND_RED_PALETTE,
+  dark: RED_AND_RED_PALETTE,
+};
+
 const DEFAULT_SETTINGS = {
   theme: "light",
+  appearance: DEFAULT_APPEARANCE_ID,
   language: "en",
   deviceName: "ADECK-UNO",
   brightness: 80,
@@ -278,6 +381,15 @@ const els = {
   saveBtn: $("saveBtn"),
   themeToggleBtn: $("themeToggleBtn"),
   themeToggleLabel: $("themeToggleLabel"),
+  appearanceBtn: $("appearanceBtn"),
+  appearanceBtnName: $("appearanceBtnName"),
+  appearanceModal: $("appearanceModal"),
+  appearanceList: $("appearanceList"),
+  appearancePreview: $("appearancePreview"),
+  appearanceStatus: $("appearanceStatus"),
+  appearanceApplyBtn: $("appearanceApplyBtn"),
+  appearanceCancelBtn: $("appearanceCancelBtn"),
+  settingAppearance: $("settingAppearance"),
   jsonModal: $("jsonModal"),
   themeModal: $("themeModal"),
   themeList: $("themeList"),
@@ -453,6 +565,7 @@ function loadSettings() {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (!raw) return;
     state.settings = { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+    state.settings.appearance = normalizeAppearance(state.settings.appearance);
   } catch (_) {}
 }
 
@@ -647,26 +760,93 @@ async function loadThemes() {
   return false;
 }
 
-function clearDeckThemeVars(root) {
-  appliedThemeVars.forEach((key) => root.style.removeProperty(key));
+function themeVarRoots() {
+  return [document.documentElement, document.body].filter(Boolean);
+}
+
+function clearDeckThemeVars() {
+  const roots = themeVarRoots();
+  appliedThemeVars.forEach((key) => {
+    roots.forEach((root) => root.style.removeProperty(key));
+  });
   appliedThemeVars = [];
 }
 
+function normalizeAppearance(id) {
+  let key = String(id || "").trim().toLowerCase();
+  if (key === "2") key = "red-and-red";
+  return APPEARANCE_IDS.indexOf(key) >= 0 ? key : DEFAULT_APPEARANCE_ID;
+}
+
+function appearanceLabel(id) {
+  return APPEARANCE_LABELS[normalizeAppearance(id)] || APPEARANCE_LABELS[DEFAULT_APPEARANCE_ID];
+}
+
+function appearanceInfo(id) {
+  return APPEARANCE_INFO[normalizeAppearance(id)] || APPEARANCE_INFO[DEFAULT_APPEARANCE_ID];
+}
+
+function appearanceList() {
+  return APPEARANCE_IDS.map((id) => ({
+    id: id,
+    name: appearanceInfo(id).name,
+    description: appearanceInfo(id).description,
+  }));
+}
+
+function appearancePalette(id, mode) {
+  const key = normalizeAppearance(id);
+  const resolved = mode === "dark" ? "dark" : "light";
+  if (key === "red-and-red") return RED_AND_RED_WEB[resolved];
+  return CLASSIC_WEB[resolved];
+}
+
+function activeAppearanceId() {
+  if (typeof appearanceModal !== "undefined" && appearanceModal.open) {
+    return normalizeAppearance(appearanceModal.selectedId);
+  }
+  return normalizeAppearance(state.settings.appearance);
+}
+
+function updateAppearanceUi() {
+  const appearanceId = normalizeAppearance(state.settings.appearance);
+  if (els.appearanceBtnName) els.appearanceBtnName.textContent = appearanceLabel(appearanceId);
+  if (els.appearanceBtn) {
+    els.appearanceBtn.title = "Appearance: " + appearanceLabel(appearanceId);
+    els.appearanceBtn.setAttribute(
+      "aria-expanded",
+      typeof appearanceModal !== "undefined" && appearanceModal.open ? "true" : "false"
+    );
+  }
+  if (els.settingAppearance) els.settingAppearance.value = appearanceId;
+}
+
+function applyAppearance(id) {
+  state.settings.appearance = normalizeAppearance(id);
+  persistSettings();
+  applyActiveDeckTheme();
+  toast("APPEARANCE " + appearanceLabel(state.settings.appearance), "info");
+}
+
 function applyDeckTheme(themeId) {
+  const roots = themeVarRoots();
   const root = document.documentElement;
   const theme = deckTheme(themeId);
-  clearDeckThemeVars(root);
+  clearDeckThemeVars();
   if (!theme) {
     root.removeAttribute("data-deck-theme");
-    return;
+  } else {
+    root.setAttribute("data-deck-theme", theme.id);
   }
+  const appearanceId = activeAppearanceId();
   const mode = state.settings.theme === "dark" ? "dark" : "light";
-  const palette = (theme.web && (theme.web[mode] || theme.web.light)) || {};
+  const palette = appearancePalette(appearanceId, mode) || {};
   Object.keys(palette).forEach((key) => {
-    root.style.setProperty(key, palette[key]);
+    roots.forEach((node) => node.style.setProperty(key, palette[key]));
     appliedThemeVars.push(key);
   });
-  root.setAttribute("data-deck-theme", theme.id);
+  roots.forEach((node) => node.setAttribute("data-web-appearance", appearanceId));
+  updateAppearanceUi();
 }
 
 function activeDeckThemeId() {

@@ -512,6 +512,7 @@ function renderEditor() {
 function renderSettingsForm() {
   const s = state.settings;
   els.settingTheme.value = s.theme || "light";
+  if (els.settingAppearance) els.settingAppearance.value = normalizeAppearance(s.appearance);
   els.settingLanguage.value = s.language || "en";
   els.settingDeviceName.value = s.deviceName || "";
   els.settingBrightness.value = String(s.brightness ?? 80);
@@ -757,6 +758,7 @@ function buildConfigObject() {
     active_profile: (activeProfile() || {}).name || null,
     settings: {
       theme: state.settings.theme,
+      appearance: normalizeAppearance(state.settings.appearance),
       language: state.settings.language,
       deviceName: state.settings.deviceName,
       brightness: state.settings.brightness,
@@ -815,6 +817,7 @@ function closeJsonModal() {
 
 
 const themeModal = { open: false, selectedId: null, savedId: null, previousFocus: null };
+const appearanceModal = { open: false, selectedId: null, savedId: null, previousFocus: null };
 
 function renderThemeCards() {
   if (!els.themeList) return;
@@ -988,6 +991,101 @@ function applySelectedTheme() {
   );
 }
 
+function renderAppearanceCards() {
+  if (!els.appearanceList) return;
+  els.appearanceList.innerHTML = "";
+  appearanceList().forEach((item) => {
+    const selected = item.id === appearanceModal.selectedId;
+    const saved = item.id === appearanceModal.savedId;
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = "theme-card" + (selected ? " is-selected" : "");
+    card.dataset.appearance = item.id;
+    card.setAttribute("role", "radio");
+    card.setAttribute("aria-checked", selected ? "true" : "false");
+    card.innerHTML =
+      '<span class="theme-card-head">' +
+      '<span class="theme-card-name">' + escapeHtml(item.name) + "</span>" +
+      '<span class="theme-card-tag mono">' + (saved ? "IN USE" : "") + "</span>" +
+      "</span>" +
+      '<span class="theme-card-desc">' + escapeHtml(item.description) + "</span>";
+    card.addEventListener("click", () => selectAppearancePreview(item.id));
+    els.appearanceList.appendChild(card);
+  });
+}
+
+function renderAppearancePreview() {
+  const id = normalizeAppearance(appearanceModal.selectedId);
+  const mode = state.settings.theme === "dark" ? "dark" : "light";
+  const palette = appearancePalette(id, mode);
+  if (els.appearancePreview) {
+    els.appearancePreview.style.setProperty("--preview-bg", palette["--bg-2"] || "#1c1917");
+    els.appearancePreview.style.setProperty("--preview-line", palette["--accent"] || "#e11d48");
+    els.appearancePreview.style.setProperty("--preview-bar", palette["--bg"] || "#141210");
+    els.appearancePreview.style.setProperty("--preview-ink", palette["--ink"] || "#eee8e2");
+    els.appearancePreview.style.setProperty("--preview-track", palette["--screen"] || "#0c0b0a");
+    els.appearancePreview.style.setProperty("--preview-accent", palette["--accent"] || "#e11d48");
+  }
+  if (els.appearanceStatus) {
+    els.appearanceStatus.textContent =
+      id === appearanceModal.savedId
+        ? "In use"
+        : "Selected — press APPLY to save it";
+  }
+}
+
+function selectAppearancePreview(id) {
+  const next = normalizeAppearance(id);
+  if (next === appearanceModal.selectedId) return;
+  appearanceModal.selectedId = next;
+  applyActiveDeckTheme();
+  renderAppearanceCards();
+  renderAppearancePreview();
+}
+
+function openAppearanceModal() {
+  if (!els.appearanceModal) return;
+  appearanceModal.previousFocus = document.activeElement;
+  appearanceModal.savedId = normalizeAppearance(state.settings.appearance);
+  appearanceModal.selectedId = appearanceModal.savedId;
+  appearanceModal.open = true;
+  els.appearanceModal.hidden = false;
+  if (els.appearanceBtn) els.appearanceBtn.setAttribute("aria-expanded", "true");
+  renderAppearanceCards();
+  renderAppearancePreview();
+}
+
+function closeAppearanceModal() {
+  if (!appearanceModal.open) return;
+  appearanceModal.open = false;
+  els.appearanceModal.hidden = true;
+  appearanceModal.selectedId = appearanceModal.savedId;
+  applyActiveDeckTheme();
+  if (els.appearanceBtn) els.appearanceBtn.setAttribute("aria-expanded", "false");
+  if (appearanceModal.previousFocus && appearanceModal.previousFocus.focus) {
+    appearanceModal.previousFocus.focus();
+  }
+  appearanceModal.previousFocus = null;
+}
+
+function applySelectedAppearance() {
+  if (!appearanceModal.selectedId) return;
+  const next = normalizeAppearance(appearanceModal.selectedId);
+  const changed = normalizeAppearance(state.settings.appearance) !== next;
+  state.settings.appearance = next;
+  appearanceModal.open = false;
+  els.appearanceModal.hidden = true;
+  appearanceModal.savedId = next;
+  appearanceModal.previousFocus = null;
+  persistSettings();
+  applyActiveDeckTheme();
+  if (els.appearanceBtn) els.appearanceBtn.setAttribute("aria-expanded", "false");
+  toast(
+    changed ? "APPEARANCE " + appearanceLabel(next) : "APPEARANCE UNCHANGED",
+    changed ? "success" : "info"
+  );
+}
+
 function formatJsonInModal() {
   try {
     els.jsonOutput.value = JSON.stringify(JSON.parse(els.jsonOutput.value), null, 2);
@@ -1083,6 +1181,7 @@ async function importConfigFromFile(file) {
 function collectSettingsFromForm() {
   return {
     theme: els.settingTheme.value || "light",
+    appearance: normalizeAppearance(els.settingAppearance && els.settingAppearance.value),
     language: els.settingLanguage.value || "en",
     deviceName: (els.settingDeviceName.value || "ADECK-UNO").trim().slice(0, 24),
     brightness: Number(els.settingBrightness.value) || 80,
