@@ -1,6 +1,3 @@
-"""Local HTTP/config/serial runtime for ADeck."""
-
-import argparse
 import ctypes
 import ctypes.wintypes
 import hashlib
@@ -8,39 +5,23 @@ import json
 import logging
 import mimetypes
 import os
-import queue
 import re
-import secrets
 import shutil
-import signal
 import struct
 import subprocess
 import sys
 import threading
 import time
 import zlib
-import urllib.error
-import urllib.request
-import webbrowser
-from dataclasses import dataclass, field
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
-
-try:
-    import serial
-    from serial.tools import list_ports
-except ImportError:
-    serial = None
-    list_ports = None
-
 
 APP_VERSION = "2.1.0"
 SERVICE_NAME = "ADeck"
 PROTOCOL_VERSION = "2"
-BASE_DIR = Path(__file__).resolve().parent
-WEB_DIR = BASE_DIR / "ADeck Web app"
+PY_DIR = Path(__file__).resolve().parent
+BASE_DIR = PY_DIR.parent
+WEB_DIR = BASE_DIR / "web app"
 DATA_DIR = Path(os.environ.get("APPDATA", Path.home())) / "ADeck"
 LOCAL_DATA_DIR = (
     Path(os.environ["LOCALAPPDATA"]) / "ADeck"
@@ -48,7 +29,7 @@ LOCAL_DATA_DIR = (
     else DATA_DIR
 )
 CONFIG_PATH = DATA_DIR / "config.json"
-# Same path the firmware installer writes — keep COM rediscovery consistent.
+
 IDENTITY_PATH = LOCAL_DATA_DIR / "board.json"
 TOKEN_PATH = LOCAL_DATA_DIR / "control.token"
 RUNTIME_PATH = LOCAL_DATA_DIR / "runtime.json"
@@ -76,14 +57,10 @@ LOGGER = logging.getLogger("adeck")
 mimetypes.add_type("application/manifest+json", ".webmanifest")
 mimetypes.add_type("text/javascript", ".js")
 
-
-# Themes: one definition for web CSS vars + TFT RGB565 colours.
-# Profiles store the stable id; display names can change freely.
-
-DEFAULT_THEME_ID = "adeck-classic"  # id kept for old saves; UI name is Space
-DEFAULT_ROTATION = 1  # ILI9341 landscape used since the first ADeck builds
+DEFAULT_THEME_ID = "adeck-classic"
+DEFAULT_ROTATION = 1
 VALID_ROTATIONS = frozenset({0, 1, 2, 3})
-# UI degrees for each setRotation value (current panel on setRotation(1) = 0°).
+
 _ROTATION_DEGREES = {1: 0, 0: 90, 2: 180, 3: 270}
 
 _THEMES = [
@@ -374,7 +351,6 @@ _THEMES = [
     },
 ]
 
-# the order the panel expects its values in, and the crc that guards them
 TFT_THEME_KEYS = (
     "background",
     "text",
@@ -387,18 +363,15 @@ TFT_THEME_KEYS = (
 
 THEMES = {theme["id"]: theme for theme in _THEMES}
 
-
 def theme_for(theme_id):
-    """The named theme, or the default when the id is missing or unknown."""
+
     key = str(theme_id or "").strip().lower()
     return THEMES.get(key) or THEMES[DEFAULT_THEME_ID]
 
-
 def theme_bg_effect(theme_id):
-    """Optional live TFT background effect id (empty = static fill)."""
+
     effect = str(theme_for(theme_id).get("bgEffect") or "").strip().lower()
     return effect if effect in {"stars"} else ""
-
 
 def theme_payload():
     return {
@@ -420,20 +393,17 @@ def theme_payload():
         ],
     }
 
-
 def control_module():
-    """Lazily import the control helper; process/OS actions are implemented there."""
-    if str(BASE_DIR) not in sys.path:
-        sys.path.insert(0, str(BASE_DIR))
+
+    if str(PY_DIR) not in sys.path:
+        sys.path.insert(0, str(PY_DIR))
     import adeck_control
 
     return adeck_control
 
-
 def debug_enabled():
     value = os.environ.get("ADECK_DEBUG", "").strip().lower()
     return value in {"1", "true", "yes", "on"}
-
 
 def setup_logging(debug=None):
     LOCAL_DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -450,10 +420,8 @@ def setup_logging(debug=None):
             stream.setFormatter(logging.Formatter("%(levelname)s %(message)s"))
             LOGGER.addHandler(stream)
 
-
 def _clone(value):
     return json.loads(json.dumps(value))
-
 
 def _atomic_json(path, value):
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -464,7 +432,6 @@ def _atomic_json(path, value):
         handle.flush()
         os.fsync(handle.fileno())
     os.replace(temp, path)
-
 
 def _clean_text(value, field_name, maximum, ascii_only=False, allow_empty=True):
     if not isinstance(value, str):
@@ -479,9 +446,8 @@ def _clean_text(value, field_name, maximum, ascii_only=False, allow_empty=True):
         raise ValueError(f"{field_name} must use printable ASCII")
     return value
 
-
 def normalize_config(raw):
-    """Validate and convert supported exports/local-cache shapes to one schema."""
+
     if not isinstance(raw, dict):
         raise ValueError("Config must be an object")
     raw_profiles = raw.get("profiles")
@@ -577,7 +543,6 @@ def normalize_config(raw):
         raw_theme = raw_profile.get("theme")
         theme = theme_for(raw_theme if isinstance(raw_theme, str) else "")["id"]
 
-        # Optional per-profile display background (behind icons on the TFT).
         raw_background = raw_profile.get("background")
         if raw_background is None or raw_background == "":
             background = theme_for(theme)["tft"]["background"].lower()
@@ -586,7 +551,6 @@ def normalize_config(raw):
         else:
             raise ValueError(f'Profile "{name}" background must be #RRGGBB')
 
-        # TFT panel orientation (Arduino setRotation 0..3). Default 1 = current landscape.
         raw_rotation = raw_profile.get("rotation")
         if raw_rotation is None or raw_rotation == "":
             rotation = DEFAULT_ROTATION
@@ -645,10 +609,8 @@ def normalize_config(raw):
         "profiles": profiles,
     }
 
-
 def validate_config(config):
     normalize_config(config)
-
 
 def active_buttons(config):
     if not config:
@@ -657,9 +619,8 @@ def active_buttons(config):
     profile = next(item for item in config["profiles"] if item["name"] == active)
     return profile["buttons"]
 
-
 def active_theme_id(config):
-    """The theme of the active workspace, or the default if it cannot be read."""
+
     if not config:
         return DEFAULT_THEME_ID
     try:
@@ -669,9 +630,8 @@ def active_theme_id(config):
         return DEFAULT_THEME_ID
     return theme_for(profile.get("theme"))["id"]
 
-
 def active_background(config):
-    """Display background for the active profile (custom hex or theme default)."""
+
     if not config:
         return theme_background(DEFAULT_THEME_ID)
     try:
@@ -684,9 +644,8 @@ def active_background(config):
         return background.lower()
     return theme_background(theme_for(profile.get("theme"))["id"])
 
-
 def normalize_rotation(value):
-    """Clamp a raw rotation to a valid setRotation id, defaulting to landscape."""
+
     if value is None or value == "":
         return DEFAULT_ROTATION
     try:
@@ -695,9 +654,8 @@ def normalize_rotation(value):
         return DEFAULT_ROTATION
     return rotation if rotation in VALID_ROTATIONS else DEFAULT_ROTATION
 
-
 def active_rotation(config):
-    """Arduino setRotation for the active workspace (0..3)."""
+
     if not config:
         return DEFAULT_ROTATION
     try:
@@ -707,14 +665,12 @@ def active_rotation(config):
         return DEFAULT_ROTATION
     return normalize_rotation(profile.get("rotation"))
 
-
 def rotation_degrees(rotation):
-    """Monitor-style degrees label for a setRotation value."""
+
     return _ROTATION_DEGREES.get(normalize_rotation(rotation), 0)
 
-
 def next_rotation(rotation):
-    """Cycle 0° → 90° → 180° → 270° → 0° in UI order."""
+
     order = (1, 0, 2, 3)
     current = normalize_rotation(rotation)
     try:
@@ -723,19 +679,16 @@ def next_rotation(rotation):
         index = 0
     return order[(index + 1) % len(order)]
 
-
 def rotation_frame(rotation, txid):
-    """Single-line orientation transaction sent after theme, before icons."""
+
     value = normalize_rotation(rotation)
     return f"CFG_ROTATE\t{txid}\t{value}\n".encode("ascii")
-
 
 def _crc16_next(crc, value):
     crc ^= value << 8
     for _ in range(8):
         crc = ((crc << 1) ^ 0x1021) & 0xFFFF if crc & 0x8000 else (crc << 1) & 0xFFFF
     return crc
-
 
 def crc16_ccitt_false(buttons):
     crc = 0xFFFF
@@ -755,7 +708,6 @@ def crc16_ccitt_false(buttons):
             crc = _crc16_next(crc, value)
     return crc
 
-
 def config_frame(config, txid):
     buttons = active_buttons(config)
     lines = [f"CFG_BEGIN\t{txid}\t{SLOT_COUNT}"]
@@ -766,12 +718,8 @@ def config_frame(config, txid):
     lines.append(f"CFG_END\t{txid}\t{crc16_ccitt_false(buttons):04X}")
     return ("\n".join(lines) + "\n").encode("ascii")
 
-
 def theme_values(theme_id, background=None):
-    """The panel colours for a theme, as RGB triples in the order the board wants.
 
-    background, when a valid #RRGGBB, replaces the theme's display background only.
-    """
     tft = theme_for(theme_id)["tft"]
     values = []
     for key in TFT_THEME_KEYS:
@@ -785,13 +733,11 @@ def theme_values(theme_id, background=None):
             values.append(_hex_rgb_tuple(tft[key]))
     return values
 
-
 def theme_background(theme_id, background=None):
-    """What the panel paints behind everything, so icons can be blended onto it."""
+
     if isinstance(background, str) and COLOR_PATTERN.fullmatch(background):
         return background.lower()
     return theme_for(theme_id)["tft"]["background"]
-
 
 def theme_crc(values):
     crc = 0xFFFF
@@ -800,14 +746,8 @@ def theme_crc(values):
             crc = _crc16_next(crc, value)
     return crc
 
-
 def theme_frame(theme_id, txid, background=None):
-    """The theme half of a sync. Sent after the slots and before the icons.
 
-    Its own transaction rather than part of CFG_BEGIN: a theme can change on
-    its own, and a rejected theme must not be able to take the slot config down
-    with it. Optional bg effect rides on BEGIN so older colour CRCs stay valid.
-    """
     values = theme_values(theme_id, background)
     effect = theme_bg_effect(theme_id)
     if effect:
@@ -820,7 +760,6 @@ def theme_frame(theme_id, txid, background=None):
         )
     lines.append(f"CFG_THEME_END\t{txid}\t{theme_crc(values):04X}")
     return ("\n".join(lines) + "\n").encode("ascii")
-
 
 _WIN_SHELL_META = re.compile(r"[&|><^]")
 _WIN_EXECUTABLE_SUFFIXES = {".exe", ".com", ".bat", ".cmd", ".msi", ".lnk"}
@@ -913,7 +852,6 @@ _FOREGROUND_NEW_WINDOW_WAIT = 2.0
 _FOREGROUND_LATE_WINDOW_WAIT = 0.45
 _FOREGROUND_POLL = 0.06
 
-
 def _allow_foreground_grant():
     if os.name != "nt":
         return
@@ -922,10 +860,8 @@ def _allow_foreground_grant():
     except Exception:
         pass
 
-
 def _needs_cmd_shell(command):
     return bool(_WIN_SHELL_META.search(command))
-
 
 def _parse_win_command(command):
     text = command.strip()
@@ -943,7 +879,6 @@ def _parse_win_command(command):
         return text, ""
     return text[:split_at], text[split_at + 1 :].strip()
 
-
 def _resolve_win_executable(executable):
     expanded = os.path.expandvars(executable.strip().strip('"'))
     path = Path(expanded)
@@ -957,10 +892,8 @@ def _resolve_win_executable(executable):
         return str(resolved_path.resolve())
     return None
 
-
 def _is_win_executable_file(path):
     return path.suffix.lower() in _WIN_EXECUTABLE_SUFFIXES
-
 
 def _uses_explorer_host_launch(path, params=""):
     return (
@@ -968,7 +901,6 @@ def _uses_explorer_host_launch(path, params=""):
         and _is_win_executable_file(path)
         and path.name.lower() != "explorer.exe"
     )
-
 
 def _shell_execute_win(file_path, params=""):
     _allow_foreground_grant()
@@ -978,7 +910,6 @@ def _shell_execute_win(file_path, params=""):
     if result <= 32:
         raise OSError(f"ShellExecute failed ({result})")
 
-
 def _normalize_relaunch_mode(value):
     text = str(value or "new").strip().lower()
     if text in {"minimize", "minimise", "toggle"}:
@@ -987,7 +918,6 @@ def _normalize_relaunch_mode(value):
         return "close"
     return "new"
 
-
 def _command_base_name(executable):
     name = Path(os.path.expandvars(executable.strip().strip('"'))).name.lower()
     if name.endswith(".exe"):
@@ -995,7 +925,6 @@ def _command_base_name(executable):
     if name.endswith(".cmd") or name.endswith(".bat") or name.endswith(".com"):
         return Path(name).stem
     return name
-
 
 def _pe_is_gui(path):
     try:
@@ -1013,7 +942,6 @@ def _pe_is_gui(path):
     except OSError:
         return False
 
-
 def _companion_gui_exe(script_path):
     stem = script_path.stem.lower()
     for folder in (script_path.parent, script_path.parent.parent):
@@ -1027,7 +955,6 @@ def _companion_gui_exe(script_path):
                 return candidate
     return None
 
-
 def _is_app_execution_alias(path):
     path = Path(path)
     parts = {part.lower() for part in path.parts}
@@ -1039,7 +966,6 @@ def _is_app_execution_alias(path):
     except OSError:
         return False
     return not _pe_is_gui(path)
-
 
 def _gui_exe_for_resolved(path):
     suffix = path.suffix.lower()
@@ -1053,7 +979,6 @@ def _gui_exe_for_resolved(path):
     if suffix in _WIN_SCRIPT_SUFFIXES:
         return _companion_gui_exe(path)
     return None
-
 
 def _win_gui_app_identity(command):
     if os.name != "nt":
@@ -1078,22 +1003,18 @@ def _win_gui_app_identity(command):
     names = {name, *(_GUI_PROCESS_ALIASES.get(name, ()))}
     return {"path": resolved_gui, "names": names}
 
-
 def _window_class_name(hwnd):
     buf = ctypes.create_unicode_buffer(256)
     ctypes.windll.user32.GetClassNameW(hwnd, buf, 256)
     return buf.value
 
-
 def _is_explorer_folder_window(hwnd):
     return _window_class_name(hwnd).lower() in _EXPLORER_FOLDER_CLASSES
-
 
 def _window_pid(hwnd):
     pid = ctypes.wintypes.DWORD()
     ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
     return pid.value
-
 
 def _process_image_path(pid):
     handle = ctypes.windll.kernel32.OpenProcess(
@@ -1111,7 +1032,6 @@ def _process_image_path(pid):
     finally:
         ctypes.windll.kernel32.CloseHandle(handle)
 
-
 def _enum_child_windows(hwnd):
     hwnds = []
 
@@ -1122,7 +1042,6 @@ def _enum_child_windows(hwnd):
 
     ctypes.windll.user32.EnumChildWindows(hwnd, callback, 0)
     return hwnds
-
 
 def _window_app_image(hwnd):
     pid = _window_pid(hwnd)
@@ -1140,7 +1059,6 @@ def _window_app_image(hwnd):
             return hosted
     return image
 
-
 def _is_top_level_app_window(hwnd):
     if ctypes.windll.user32.GetWindow(hwnd, _GW_OWNER):
         return False
@@ -1153,7 +1071,6 @@ def _is_top_level_app_window(hwnd):
     if ctypes.windll.user32.IsIconic(hwnd):
         return True
     return bool(ctypes.windll.user32.IsWindowVisible(hwnd))
-
 
 def _find_windows_for_app(identity):
     if not identity:
@@ -1184,7 +1101,6 @@ def _find_windows_for_app(identity):
     ctypes.windll.user32.EnumWindows(callback, 0)
     return hwnds
 
-
 def _unlock_foreground():
     _allow_foreground_grant()
     try:
@@ -1197,11 +1113,9 @@ def _unlock_foreground():
     except Exception:
         pass
 
-
 def _window_tid(hwnd):
     pid = ctypes.wintypes.DWORD()
     return ctypes.windll.user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-
 
 def _force_window_foreground(hwnd):
     if os.name != "nt" or not hwnd:
@@ -1270,7 +1184,6 @@ def _force_window_foreground(hwnd):
             user32.AttachThreadInput(current_tid, fg_tid, False)
     return True
 
-
 def _bring_app_windows_forward(identity, before_hwnds, timeout=7.0):
     if not identity:
         return False
@@ -1323,7 +1236,6 @@ def _bring_app_windows_forward(identity, before_hwnds, timeout=7.0):
         LOGGER.debug("Foreground bring-up failed: %s", error)
         return False
 
-
 def _schedule_bring_app_forward(identity, before_hwnds):
     if os.name != "nt" or not identity:
         return
@@ -1333,7 +1245,6 @@ def _schedule_bring_app_forward(identity, before_hwnds):
         daemon=True,
         name="adeck-foreground",
     ).start()
-
 
 def _minimize_or_restore_windows(hwnds):
     _allow_foreground_grant()
@@ -1347,12 +1258,10 @@ def _minimize_or_restore_windows(hwnds):
     _force_window_foreground(hwnd)
     return "restore"
 
-
 def _close_windows(hwnds):
     for hwnd in hwnds:
         ctypes.windll.user32.PostMessageW(hwnd, _WM_CLOSE, 0, 0)
     return "close"
-
 
 def _apply_app_relaunch(command, relaunch_mode):
     mode = _normalize_relaunch_mode(relaunch_mode)
@@ -1372,7 +1281,6 @@ def _apply_app_relaunch(command, relaunch_mode):
     else:
         _minimize_or_restore_windows(hwnds)
     return True
-
 
 def _launch_win_command(command, relaunch_mode="new", command_kind=""):
     kind = str(command_kind or "").strip().lower()
@@ -1417,7 +1325,6 @@ def _launch_win_command(command, relaunch_mode="new", command_kind=""):
     finally:
         if identity:
             _schedule_bring_app_forward(identity, before)
-
 
 _APPS_CACHE_LOCK = threading.Lock()
 _APPS_CACHE = {"at": 0.0, "payload": None}
@@ -1477,7 +1384,6 @@ _BUILTIN_APP_COMMANDS = {
     "windows settings": "ms-settings:",
 }
 
-
 def _quote_win_path(path):
     text = str(path).strip()
     if not text:
@@ -1485,7 +1391,6 @@ def _quote_win_path(path):
     if " " in text and not (text.startswith('"') and text.endswith('"')):
         return f'"{text}"'
     return text
-
 
 def _format_app_command(target, arguments=""):
     target = str(target or "").strip().strip('"')
@@ -1498,7 +1403,6 @@ def _format_app_command(target, arguments=""):
         return arguments[:COMMAND_MAX]
     return f"{_quote_win_path(target)} {arguments}".strip()[:COMMAND_MAX]
 
-
 def _should_skip_app(name, command):
     if not name or not command:
         return True
@@ -1509,7 +1413,7 @@ def _should_skip_app(name, command):
     exe, params = _parse_win_command(command)
     exe_name = Path(os.path.expandvars(exe.strip().strip('"'))).name.lower()
     if exe_name in _APP_SKIP_EXES:
-        # Keep wrappers that are real apps launched through pythonw, such as ADeck.
+
         if exe_name in {"python.exe", "pythonw.exe"}:
             lowered = name.casefold()
             if lowered.startswith("python") or "idle" in lowered or "pydoc" in lowered:
@@ -1517,7 +1421,6 @@ def _should_skip_app(name, command):
             return False
         return True
     return bool(_APP_SKIP_TARGET.search(exe.replace("/", "\\")))
-
 
 def _builtin_windows_apps():
     apps = []
@@ -1537,7 +1440,6 @@ def _builtin_windows_apps():
         if resolved or shutil.which(command):
             apps.append({"name": name, "command": command})
     return apps
-
 
 def _registry_installed_apps():
     apps = []
@@ -1591,7 +1493,6 @@ def _registry_installed_apps():
             winreg.CloseKey(hive_key)
     return apps
 
-
 def _read_lnk_string(data, pos, unicode):
     if pos + 2 > len(data):
         return "", pos
@@ -1611,7 +1512,6 @@ def _read_lnk_string(data, pos, unicode):
     except LookupError:
         text = raw.decode("latin-1", "ignore")
     return text.rstrip("\x00"), pos + count
-
 
 def _parse_lnk_launch(path):
     try:
@@ -1650,7 +1550,6 @@ def _parse_lnk_launch(path):
             arguments = text
     return target.strip(), arguments.strip()
 
-
 def _start_menu_roots():
     roots = []
     programdata = os.environ.get("ProgramData")
@@ -1660,7 +1559,6 @@ def _start_menu_roots():
     if appdata:
         roots.append(Path(appdata) / "Microsoft" / "Windows" / "Start Menu" / "Programs")
     return roots
-
 
 def _start_menu_shortcut_apps():
     apps = []
@@ -1692,7 +1590,6 @@ def _start_menu_shortcut_apps():
             apps.append({"name": name, "command": command})
     return apps
 
-
 def _dedupe_installed_apps(apps):
     by_command = {}
     for app in apps:
@@ -1717,7 +1614,6 @@ def _dedupe_installed_apps(apps):
         if curr_exists and not prev_exists:
             by_name[key] = app
     return sorted(by_name.values(), key=lambda item: item["name"].casefold())
-
 
 def list_installed_apps():
     with _APPS_CACHE_LOCK:
@@ -1748,16 +1644,14 @@ def list_installed_apps():
         _APPS_CACHE["payload"] = payload
     return payload
 
-
 _ICON_SIZE = 32
 _TFT_ICON_SIZE = 32
-# an icon goes to the board in small chunks: it has a 256 byte receive buffer
-# and reads it between screen paints, so a single 4.6 KB burst overflows it
+
 _ICON_ROWS_PER_CHUNK = 8
 _ICON_CHUNK_DELAY = 0.004
 _ICON_ATTEMPTS = 3
 _ICON_ACK_TIMEOUT = 1.5
-# the theme frame is a handful of short lines, so it needs far less patience
+
 _THEME_ATTEMPTS = 2
 _THEME_ACK_TIMEOUT = 1.5
 _ROTATE_ATTEMPTS = 2
@@ -1770,7 +1664,6 @@ _SHGFI_LARGEICON = 0x000000000
 _DI_NORMAL = 0x0003
 _BI_RGB = 0
 _DIB_RGB_COLORS = 0
-
 
 class _BITMAPINFOHEADER(ctypes.Structure):
     _fields_ = [
@@ -1787,13 +1680,11 @@ class _BITMAPINFOHEADER(ctypes.Structure):
         ("biClrImportant", ctypes.wintypes.DWORD),
     ]
 
-
 class _BITMAPINFO(ctypes.Structure):
     _fields_ = [
         ("bmiHeader", _BITMAPINFOHEADER),
         ("bmiColors", ctypes.wintypes.DWORD * 3),
     ]
-
 
 class _SHFILEINFOW(ctypes.Structure):
     _fields_ = [
@@ -1803,7 +1694,6 @@ class _SHFILEINFOW(ctypes.Structure):
         ("szDisplayName", ctypes.wintypes.WCHAR * 260),
         ("szTypeName", ctypes.wintypes.WCHAR * 80),
     ]
-
 
 def _ensure_icon_apis():
     global _ICON_APIS_READY
@@ -1873,7 +1763,6 @@ def _ensure_icon_apis():
     gdi32.DeleteDC.argtypes = [ctypes.wintypes.HDC]
     _ICON_APIS_READY = True
 
-
 def _png_from_rgba(width, height, rgba):
     stride = width * 4
     expected = stride * height
@@ -1891,13 +1780,10 @@ def _png_from_rgba(width, height, rgba):
         + chunk(b"IEND", b"")
     )
 
-
 _PLACEHOLDER_CACHE = {}
 
-
 def _placeholder_icon_png(size=_ICON_SIZE):
-    # The picker asks for one icon per app, so this gets called a lot. The
-    # pixels never change - build each size once.
+
     cached = _PLACEHOLDER_CACHE.get(size)
     if cached is not None:
         return cached
@@ -1915,7 +1801,6 @@ def _placeholder_icon_png(size=_ICON_SIZE):
     png = _png_from_rgba(size, size, bytes(row))
     _PLACEHOLDER_CACHE[size] = png
     return png
-
 
 def _hicon_to_rgba(hicon, size=_ICON_SIZE):
     if not hicon:
@@ -1961,11 +1846,9 @@ def _hicon_to_rgba(hicon, size=_ICON_SIZE):
     user32.ReleaseDC(None, hdc)
     return rgba
 
-
 def _hicon_to_png(hicon, size=_ICON_SIZE):
     rgba = _hicon_to_rgba(hicon, size)
     return _png_from_rgba(size, size, rgba) if rgba else b""
-
 
 def _hicon_from_path(path, index=0):
     _ensure_icon_apis()
@@ -1993,7 +1876,6 @@ def _hicon_from_path(path, index=0):
         return large
     return None
 
-
 def _icon_source_for_command(command):
     text = str(command or "").strip()
     if not text:
@@ -2019,7 +1901,6 @@ def _icon_source_for_command(command):
     if path.suffix.lower() in _ICON_FILE_SUFFIXES and path.is_file():
         return str(path)
     return ""
-
 
 def app_icon_png(command, cache_dir=None):
     placeholder = _placeholder_icon_png()
@@ -2062,7 +1943,6 @@ def app_icon_png(command, cache_dir=None):
         pass
     return png
 
-
 def _hex_rgb_tuple(value):
     text = str(value or "").strip()
     if len(text) == 7 and text[0] == "#":
@@ -2071,7 +1951,6 @@ def _hex_rgb_tuple(value):
         except ValueError:
             pass
     return (0, 0, 0)
-
 
 def _extract_icon_rgba(source, size=_TFT_ICON_SIZE):
     if not source:
@@ -2091,7 +1970,6 @@ def _extract_icon_rgba(source, size=_TFT_ICON_SIZE):
                 except Exception:
                     pass
 
-
 def _rgba_to_rgb565(rgba, width, height, background=(0, 0, 0)):
     expected = width * height * 4
     if not rgba or len(rgba) < expected:
@@ -2109,7 +1987,6 @@ def _rgba_to_rgb565(rgba, width, height, background=(0, 0, 0)):
         out[pixel * 2 + 1] = packed & 0xFF
     return bytes(out)
 
-
 def app_icon_rgb565(command, background="#000000"):
     if str(command or "").strip() == "" or os.name != "nt":
         return b""
@@ -2123,13 +2000,8 @@ def app_icon_rgb565(command, background="#000000"):
         rgba, _TFT_ICON_SIZE, _TFT_ICON_SIZE, _hex_rgb_tuple(background)
     )
 
-
 def _dominant_color_from_rgba(rgba, width, height):
-    """Pick the majority opaque colour from an RGBA buffer (#rrggbb).
 
-    Near-black / near-white / transparent pixels are skipped so logos like Brave
-    resolve to their brand colour instead of the canvas.
-    """
     expected = width * height * 4
     if not rgba or len(rgba) < expected:
         return "#c5c5c3"
@@ -2144,7 +2016,7 @@ def _dominant_color_from_rgba(rgba, width, height):
             continue
         if red > 235 and green > 235 and blue > 235:
             continue
-        # Quantize a little so anti-aliased edges collapse to one bucket.
+
         key = (red & 0xF8, green & 0xF8, blue & 0xF8)
         counts[key] = counts.get(key, 0) + 1
     if not counts:
@@ -2152,9 +2024,8 @@ def _dominant_color_from_rgba(rgba, width, height):
     red, green, blue = max(counts.items(), key=lambda item: item[1])[0]
     return f"#{red:02x}{green:02x}{blue:02x}"
 
-
 def dominant_icon_color(command):
-    """Majority colour of an app icon for a command, or ash when unknown."""
+
     fallback = "#c5c5c3"
     if str(command or "").strip() == "" or os.name != "nt":
         return fallback
@@ -2166,7 +2037,6 @@ def dominant_icon_color(command):
         return fallback
     return _dominant_color_from_rgba(rgba, _TFT_ICON_SIZE, _TFT_ICON_SIZE)
 
-
 def slot_icon_frame(index, button, txid, background="#000000"):
     if not isinstance(button, dict):
         return b""
@@ -2175,9 +2045,7 @@ def slot_icon_frame(index, button, txid, background="#000000"):
     command = str(button.get("command") or "").strip()
     if not command:
         return b""
-    # the panel draws app icons straight on its background, so that is what the
-    # host blends the transparency against - which is the workspace theme's
-    # background, or black when no theme has said otherwise
+
     pixels = app_icon_rgb565(command, background)
     row_bytes = _TFT_ICON_SIZE * 2
     if len(pixels) != _TFT_ICON_SIZE * row_bytes:
@@ -2191,7 +2059,6 @@ def slot_icon_frame(index, button, txid, background="#000000"):
     lines.append(f"CFG_ICON_END\t{txid}\t{index}")
     return ("\n".join(lines) + "\n").encode("ascii")
 
-
 def app_icon_frames(buttons, txid, background="#000000"):
     frames = []
     for index, button in enumerate(buttons or []):
@@ -2199,1438 +2066,3 @@ def app_icon_frames(buttons, txid, background="#000000"):
         if frame:
             frames.append((index, frame))
     return frames
-
-
-class ConfigStore:
-    def __init__(self, path=None, backup_path=None):
-        self.path = Path(path) if path else CONFIG_PATH
-        self.backup_path = Path(backup_path) if backup_path else self.path.with_name(
-            "config.backup.json"
-        )
-        self.lock = threading.RLock()
-        self.config = None
-        self.load()
-
-    def _read_valid(self, path):
-        with path.open("r", encoding="utf-8") as handle:
-            return normalize_config(json.load(handle))
-
-    def _quarantine(self, error):
-        stamp = time.strftime("%Y%m%d-%H%M%S") + "-" + secrets.token_hex(2)
-        target = self.path.with_name(f"config.corrupt-{stamp}.json")
-        try:
-            os.replace(self.path, target)
-            LOGGER.error("Quarantined corrupt config as %s: %s", target.name, error)
-        except OSError:
-            LOGGER.error("Could not quarantine corrupt config: %s", error)
-
-    def load(self):
-        with self.lock:
-            if not self.path.exists():
-                return
-            try:
-                self.config = self._read_valid(self.path)
-                LOGGER.info("Loaded configuration")
-                return
-            except Exception as error:
-                self._quarantine(error)
-            if self.backup_path.exists():
-                try:
-                    self.config = self._read_valid(self.backup_path)
-                    _atomic_json(self.path, self.config)
-                    LOGGER.warning("Recovered configuration from backup")
-                except Exception as error:
-                    LOGGER.error("Backup configuration is invalid: %s", error)
-
-    def save(self, raw):
-        config = normalize_config(raw)
-        with self.lock:
-            backed_up_previous = False
-            if self.path.exists():
-                try:
-                    previous = self._read_valid(self.path)
-                    _atomic_json(self.backup_path, previous)
-                    backed_up_previous = True
-                except Exception as error:
-                    self._quarantine(error)
-            _atomic_json(self.path, config)
-            if not backed_up_previous:
-                _atomic_json(self.backup_path, config)
-            self.config = config
-            return _clone(config)
-
-    def snapshot(self):
-        with self.lock:
-            return _clone(self.config) if self.config is not None else None
-
-    def command_for(self, index):
-        with self.lock:
-            if self.config is None or not 0 <= index < SLOT_COUNT:
-                return ""
-            return active_buttons(self.config)[index]["command"].strip()
-
-    def command_kind_for(self, index):
-        with self.lock:
-            if self.config is None or not 0 <= index < SLOT_COUNT:
-                return ""
-            kind = active_buttons(self.config)[index].get("kind") or ""
-            return str(kind).strip().lower()
-
-    def app_relaunch_mode(self):
-        with self.lock:
-            if self.config is None:
-                return "new"
-            settings = self.config.get("settings") or {}
-            if not isinstance(settings, dict):
-                return "new"
-            return _normalize_relaunch_mode(
-                settings.get("appRelaunchMode") or settings.get("app_relaunch_mode")
-            )
-
-
-class ProtocolError(Exception):
-    pass
-
-
-@dataclass
-class SyncRequest:
-    config: dict
-    txid: str = field(default_factory=lambda: secrets.token_hex(6))
-    finished: threading.Event = field(default_factory=threading.Event)
-    state: str = "sync_failed"
-    error: str = ""
-
-
-class ADeckDevice:
-    def __init__(self, store, requested_port=None, identity_path=None):
-        self.store = store
-        self.requested_port = requested_port or os.environ.get("ADECK_PORT")
-        self.identity_path = Path(identity_path) if identity_path else IDENTITY_PATH
-        self.identity = self._load_identity()
-        self._state_lock = threading.RLock()
-        self._connection = None
-        self._port = None
-        self._firmware = None
-        self._tft_icons = False
-        self._tft_theme = False
-        self._tft_rotate = False
-        self._theme_id = None
-        self._rotation = None
-        self._last_error = ""
-        self._last_sync = None
-        self._last_txid = None
-        self._stop = threading.Event()
-        self._resync = threading.Event()
-        self._requests = queue.Queue()
-        self.thread = threading.Thread(target=self._run, name="adeck-device", daemon=True)
-
-    def _load_identity(self):
-        # Prefer board.json; still accept older device.json paths from early builds.
-        paths = [
-            self.identity_path,
-            LOCAL_DATA_DIR / "board.json",
-            LOCAL_DATA_DIR / "device.json",
-            LOCAL_DATA_DIR / "board_identity.json",
-            DATA_DIR / "board.json",
-            DATA_DIR / "device.json",
-            DATA_DIR / "board_identity.json",
-        ]
-        for path in paths:
-            try:
-                value = json.loads(path.read_text(encoding="utf-8"))
-                if isinstance(value, dict) and isinstance(value.get("board"), dict):
-                    value = value["board"]
-                if isinstance(value, dict):
-                    return value
-            except (OSError, ValueError, TypeError, AttributeError):
-                continue
-        return {}
-
-    @staticmethod
-    def _number(value):
-        if isinstance(value, int):
-            return value
-        if isinstance(value, str):
-            try:
-                text = value.strip()
-                if text.lower().startswith("0x"):
-                    return int(text, 16)
-                if re.fullmatch(r"[0-9A-Fa-f]{4}", text):
-                    return int(text, 16)
-                return int(text, 10)
-            except ValueError:
-                return None
-        return None
-
-    def start(self):
-        self.thread.start()
-
-    def stop(self):
-        self._stop.set()
-        self._requests.put(None)
-        with self._state_lock:
-            connection = self._connection
-        if connection is not None:
-            try:
-                connection.close()
-            except Exception:
-                pass
-        if self.thread.is_alive():
-            self.thread.join(timeout=5)
-
-    def status(self):
-        with self._state_lock:
-            return {
-                "connected": self._connection is not None,
-                "port": self._port,
-                "firmware": self._firmware,
-                "theme": self._theme_id,
-                "rotation": self._rotation,
-                "last_sync": self._last_sync,
-                "last_transaction_id": self._last_txid,
-                "error": self._last_error or None,
-            }
-
-    def available_ports(self):
-        """Serial ports visible right now, tagged with ADeck-match information."""
-        if list_ports is None:
-            return []
-        ports = []
-        for info in list_ports.comports():
-            try:
-                matches = self._metadata_matches(info)
-            except Exception:
-                matches = False
-            ports.append(
-                {
-                    "device": info.device,
-                    "description": (getattr(info, "description", "") or "").strip(),
-                    "manufacturer": (getattr(info, "manufacturer", "") or "").strip(),
-                    "serial_number": getattr(info, "serial_number", None),
-                    "arduino": getattr(info, "vid", None) in ARDUINO_VIDS,
-                    "matches": matches,
-                }
-            )
-        return ports
-
-    def request_reconnect(self, port=None):
-        """Drop the serial link (optionally pinning a port) so discovery runs again."""
-        if port is not None:
-            self.requested_port = port or None
-        with self._state_lock:
-            connection = self._connection
-            self._connection = None
-            self._port = None
-            self._firmware = None
-            self._tft_icons = False
-            self._tft_theme = False
-            self._tft_rotate = False
-            self._theme_id = None
-            self._rotation = None
-            self._last_sync = None
-            self._last_error = "Reconnecting"
-        if connection is not None:
-            try:
-                connection.close()
-            except Exception:
-                pass
-        self._resync.set()
-        LOGGER.info("Reconnect requested (port=%s)", self.requested_port or "auto")
-
-    def request_sync(self, config, timeout=12):
-        with self._state_lock:
-            if self._connection is None:
-                self._resync.set()
-                return {
-                    "sync_state": "offline",
-                    "device_synced": False,
-                    "transaction_id": None,
-                    "acknowledged_transaction_id": None,
-                    "sync_error": None,
-                }
-        request = SyncRequest(_clone(config))
-        self._requests.put(request)
-        if not request.finished.wait(timeout):
-            return {
-                "sync_state": "sync_failed",
-                "device_synced": False,
-                "transaction_id": request.txid,
-                "acknowledged_transaction_id": None,
-                "sync_error": "Timed out waiting for device acknowledgement",
-            }
-        return {
-            "sync_state": request.state,
-            "device_synced": request.state == "synced",
-            "transaction_id": request.txid,
-            "acknowledged_transaction_id": request.txid if request.state == "synced" else None,
-            "sync_error": request.error or None,
-        }
-
-    def _metadata_matches(self, info):
-        if self.requested_port:
-            return info.device.lower() == self.requested_port.lower()
-        serial_number = (
-            self.identity.get("serial_number")
-            or self.identity.get("serialNumber")
-            or self.identity.get("serial")
-        )
-        wanted_vid = self._number(self.identity.get("vid") or self.identity.get("usb_vid"))
-        wanted_pid = self._number(self.identity.get("pid") or self.identity.get("usb_pid"))
-        if serial_number:
-            return (
-                str(getattr(info, "serial_number", "") or "") == str(serial_number)
-                and getattr(info, "vid", None) in ARDUINO_VIDS
-            )
-        if wanted_vid is not None:
-            return (
-                getattr(info, "vid", None) == wanted_vid
-                and (wanted_pid is None or getattr(info, "pid", None) == wanted_pid)
-                and wanted_vid in ARDUINO_VIDS
-            )
-        text = " ".join(
-            str(getattr(info, field, "") or "")
-            for field in ("description", "manufacturer", "product", "hwid")
-        ).lower()
-        return getattr(info, "vid", None) in ARDUINO_VIDS and (
-            "arduino" in text or "uno r4" in text
-        )
-
-    def _candidate_ports(self):
-        ports = list(list_ports.comports())
-        if self.requested_port and not any(
-            item.device.lower() == self.requested_port.lower() for item in ports
-        ):
-            return [(self.requested_port, None)]
-        matched = [(item.device, item) for item in ports if self._metadata_matches(item)]
-        last_port = (
-            self.identity.get("last_port")
-            or self.identity.get("port")
-            or self.identity.get("address")
-        )
-        matched.sort(key=lambda item: (item[0] != last_port, item[0]))
-        return matched
-
-    def _probe(self, port):
-        connection = serial.Serial(port, BAUD, timeout=0.15, write_timeout=1)
-        try:
-            time.sleep(1.7)
-            connection.reset_input_buffer()
-            connection.write(b"PING\n")
-            connection.flush()
-            deadline = time.monotonic() + 1.8
-            while time.monotonic() < deadline and not self._stop.is_set():
-                line = connection.readline().decode("ascii", errors="ignore").strip()
-                if line == f"ADECK_PONG\t{PROTOCOL_VERSION}":
-                    self._tft_icons = False
-                    self._tft_theme = False
-                    self._tft_rotate = False
-                    caps_deadline = time.monotonic() + 0.35
-                    while time.monotonic() < caps_deadline and not self._stop.is_set():
-                        extra = connection.readline().decode(
-                            "ascii", errors="ignore"
-                        ).strip()
-                        if extra == "ADECK_CAPS\tICON":
-                            self._tft_icons = True
-                        elif extra == "ADECK_CAPS\tTHEME":
-                            self._tft_theme = True
-                        elif extra == "ADECK_CAPS\tROTATE":
-                            self._tft_rotate = True
-                        elif extra.startswith("PRESS\t"):
-                            self._handle_line(extra)
-                        if self._tft_icons and self._tft_theme and self._tft_rotate:
-                            break
-                    # a board that only ever said ICON simply runs the clock out.
-                    # cheaper than guessing from a quiet read and losing THEME
-                    return connection
-                if line.startswith("PRESS\t"):
-                    self._handle_line(line)
-                if line == "ADECK_CAPS\tICON":
-                    self._tft_icons = True
-                if line == "ADECK_CAPS\tTHEME":
-                    self._tft_theme = True
-                if line == "ADECK_CAPS\tROTATE":
-                    self._tft_rotate = True
-        except Exception:
-            connection.close()
-            raise
-        connection.close()
-        return None
-
-    def _save_identity(self, port, info):
-        identity = dict(self.identity)
-        identity["last_port"] = port
-        if info is not None:
-            for field in ("vid", "pid", "serial_number", "manufacturer", "product"):
-                value = getattr(info, field, None)
-                if value is not None:
-                    identity[field] = value
-        try:
-            _atomic_json(self.identity_path, identity)
-            self.identity = identity
-        except OSError as error:
-            LOGGER.warning("Could not store board identity: %s", error)
-
-    def _connect(self):
-        try:
-            candidates = self._candidate_ports()
-        except Exception as error:
-            with self._state_lock:
-                self._last_error = f"Serial discovery failed: {error}"
-            LOGGER.warning("Serial discovery failed: %s", error)
-            return False
-        for port, info in candidates:
-            if self._stop.is_set():
-                return False
-            try:
-                connection = self._probe(port)
-                if connection is None:
-                    continue
-                with self._state_lock:
-                    self._connection = connection
-                    self._port = port
-                    self._firmware = PROTOCOL_VERSION
-                    self._last_error = ""
-                self._save_identity(port, info)
-                self._resync.set()
-                LOGGER.info("Connected to ADeck on %s", port)
-                return True
-            except Exception as error:
-                LOGGER.debug("Probe failed on %s: %s", port, error)
-        with self._state_lock:
-            self._last_error = "ADeck not found"
-        return False
-
-    def _disconnect(self, error=""):
-        with self._state_lock:
-            connection = self._connection
-            port = self._port
-            self._connection = None
-            self._port = None
-            self._firmware = None
-            self._tft_icons = False
-            self._tft_theme = False
-            self._tft_rotate = False
-            self._theme_id = None
-            self._rotation = None
-            self._last_sync = False
-            if error:
-                self._last_error = error
-        if connection is not None:
-            try:
-                connection.close()
-            except Exception:
-                pass
-        if port:
-            LOGGER.warning("Disconnected from %s: %s", port, error or "connection closed")
-
-    def _run_command(self, index):
-        if not 0 <= index < SLOT_COUNT:
-            return
-        command = self.store.command_for(index)
-        if not command:
-            return
-        getter = getattr(self.store, "app_relaunch_mode", None)
-        relaunch_mode = getter() if callable(getter) else "new"
-        kind_getter = getattr(self.store, "command_kind_for", None)
-        command_kind = kind_getter(index) if callable(kind_getter) else ""
-        try:
-            LOGGER.info(
-                "Dispatching command for key %s [%s/%s]: %s",
-                index + 1,
-                _normalize_relaunch_mode(relaunch_mode),
-                command_kind or "auto",
-                command,
-            )
-            if os.name == "nt":
-                _launch_win_command(command, relaunch_mode, command_kind)
-            else:
-                subprocess.Popen(command, shell=True)
-        except Exception as error:
-            LOGGER.error("Command for key %s failed: %s", index + 1, error)
-
-    def _handle_line(self, line):
-        if line.startswith("PRESS\t"):
-            try:
-                index = int(line.split("\t", 1)[1])
-            except ValueError:
-                return
-            if 0 <= index < SLOT_COUNT:
-                LOGGER.info("Physical press received for key %s", index + 1)
-                threading.Thread(
-                    target=self._run_command, args=(index,), name=f"adeck-key-{index}", daemon=True
-                ).start()
-        elif line == "ADECK_CAPS\tICON":
-            with self._state_lock:
-                self._tft_icons = True
-        elif line == "ADECK_CAPS\tTHEME":
-            with self._state_lock:
-                self._tft_theme = True
-        elif line == "ADECK_CAPS\tROTATE":
-            with self._state_lock:
-                self._tft_rotate = True
-        elif line == f"ADECK_READY\t{PROTOCOL_VERSION}":
-            self._resync.set()
-
-    def _sync(self, config, txid):
-        frame = config_frame(config, txid)
-        with self._state_lock:
-            connection = self._connection
-        if connection is None:
-            raise OSError("ADeck is offline")
-        connection.write(frame)
-        connection.flush()
-        deadline = time.monotonic() + 5
-        while time.monotonic() < deadline and not self._stop.is_set():
-            line = connection.readline().decode("ascii", errors="ignore").strip()
-            if line == f"CFG_OK\t{txid}":
-                with self._state_lock:
-                    self._last_sync = True
-                    self._last_txid = txid
-                    self._last_error = ""
-                LOGGER.info("Synchronized transaction %s", txid)
-                # theme → rotation → icons: layout must settle before pixels land
-                wanted = active_theme_id(config)
-                background = active_background(config)
-                in_force = self._push_theme(
-                    connection, wanted, txid, background=background
-                )
-                self._push_rotation(connection, active_rotation(config), txid)
-                # no theme in force means a board that still paints black - the
-                # old firmware - so the icons go back to being blended on black
-                blend = (
-                    theme_background(in_force, background)
-                    if in_force
-                    else "#000000"
-                )
-                self._push_app_icons(
-                    connection,
-                    active_buttons(config),
-                    txid,
-                    blend,
-                )
-                return
-            if line.startswith(f"CFG_ERR\t{txid}\t"):
-                reason = line.split("\t", 2)[2]
-                with self._state_lock:
-                    self._last_sync = False
-                    self._last_txid = txid
-                    self._last_error = f"Device rejected config: {reason}"
-                raise ProtocolError(reason)
-            if line:
-                self._handle_line(line)
-        raise TimeoutError("ADeck did not acknowledge the configuration")
-
-    def _push_theme(self, connection, theme_id, txid, background=None):
-        """Send the workspace theme, retrying the frame like the icons do.
-
-        Returns the theme the panel is now wearing, or None when there is none
-        to report - a board that never announced CFG_THEME_* support is left
-        alone entirely, so older firmware keeps working with a newer host. A
-        board that refuses the frame keeps whatever it had before, so the old
-        id is handed back rather than the one we failed to send.
-        """
-        with self._state_lock:
-            capable = self._tft_theme
-        if connection is None or not capable:
-            return None
-        expected = f"CFG_THEME_OK\t{txid}"
-        rejected = f"CFG_THEME_ERR\t{txid}\t"
-        frame = theme_frame(theme_id, txid, background=background)
-        for attempt in range(1, _THEME_ATTEMPTS + 1):
-            if self._stop.is_set():
-                return self._theme_id
-            try:
-                connection.write(frame)
-                connection.flush()
-                deadline = time.monotonic() + _THEME_ACK_TIMEOUT
-                while time.monotonic() < deadline and not self._stop.is_set():
-                    reply = connection.readline().decode("ascii", errors="ignore").strip()
-                    if reply == expected:
-                        with self._state_lock:
-                            self._theme_id = theme_id
-                        LOGGER.info("Applied theme %s", theme_id)
-                        return theme_id
-                    if reply.startswith(rejected):
-                        # the board refused it and kept its previous colours;
-                        # retrying is worthwhile, the frame may have lost a line
-                        LOGGER.debug("Theme rejected: %s", reply)
-                        break
-                    if reply.startswith("PRESS\t") or reply.startswith("ADECK_CAPS\t"):
-                        self._handle_line(reply)
-            except Exception as error:
-                LOGGER.debug("Theme write failed: %s", error)
-                return self._theme_id
-        LOGGER.warning(
-            "Theme %s was not accepted by the board; it keeps its previous colours",
-            theme_id,
-        )
-        return self._theme_id
-
-    def _push_rotation(self, connection, rotation, txid):
-        """Send panel orientation. Older boards without ROTATE caps are skipped."""
-        with self._state_lock:
-            capable = self._tft_rotate
-        if connection is None or not capable:
-            return None
-        value = normalize_rotation(rotation)
-        expected = f"CFG_ROTATE_OK\t{txid}"
-        rejected = f"CFG_ROTATE_ERR\t{txid}\t"
-        frame = rotation_frame(value, txid)
-        for attempt in range(1, _ROTATE_ATTEMPTS + 1):
-            if self._stop.is_set():
-                return self._rotation
-            try:
-                connection.write(frame)
-                connection.flush()
-                deadline = time.monotonic() + _ROTATE_ACK_TIMEOUT
-                while time.monotonic() < deadline and not self._stop.is_set():
-                    reply = connection.readline().decode("ascii", errors="ignore").strip()
-                    if reply == expected:
-                        with self._state_lock:
-                            self._rotation = value
-                        LOGGER.info(
-                            "Applied rotation %s (%s°)", value, rotation_degrees(value)
-                        )
-                        return value
-                    if reply.startswith(rejected):
-                        LOGGER.debug("Rotation rejected: %s", reply)
-                        break
-                    if reply.startswith("PRESS\t") or reply.startswith("ADECK_CAPS\t"):
-                        self._handle_line(reply)
-            except Exception as error:
-                LOGGER.debug("Rotation write failed: %s", error)
-                return self._rotation
-        LOGGER.warning(
-            "Rotation %s was not accepted by the board; it keeps its previous orientation",
-            value,
-        )
-        return self._rotation
-
-    def _push_app_icons(self, connection, buttons, txid, background="#000000"):
-        with self._state_lock:
-            capable = self._tft_icons
-        if connection is None or not capable:
-            return
-        try:
-            frames = app_icon_frames(buttons, txid, background)
-        except Exception as error:
-            LOGGER.debug("TFT app icons skipped: %s", error)
-            return
-        missing = []
-        for index, frame in frames:
-            if not self._send_icon(connection, index, frame, txid):
-                missing.append(index)
-        if missing:
-            LOGGER.warning(
-                "TFT icon(s) never accepted for key(s) %s in transaction %s",
-                ", ".join(str(index + 1) for index in missing),
-                txid,
-            )
-        elif frames:
-            LOGGER.info(
-                "Pushed %s TFT app icon(s) for transaction %s", len(frames), txid
-            )
-
-    def _send_icon(self, connection, index, frame, txid):
-        """Send one 32x32 icon, retrying the whole frame.
-
-        The board has a 256 byte serial receive buffer and has to keep reading
-        it while it paints, so a burst of icon rows can lose some. That is a
-        retry, not a failure - and the board answers CFG_ICON_ERR when it knows
-        rows went missing, so a retry does not have to wait out the timeout.
-        """
-        expected = f"CFG_ICON_OK\t{txid}\t{index}"
-        rejected = f"CFG_ICON_ERR\t{txid}\t{index}\t"
-        lines = [line for line in frame.split(b"\n") if line]
-        for attempt in range(1, _ICON_ATTEMPTS + 1):
-            if self._stop.is_set():
-                return False
-            try:
-                for start in range(0, len(lines), _ICON_ROWS_PER_CHUNK):
-                    chunk = lines[start : start + _ICON_ROWS_PER_CHUNK]
-                    connection.write(b"\n".join(chunk) + b"\n")
-                    connection.flush()
-                    time.sleep(_ICON_CHUNK_DELAY)
-                deadline = time.monotonic() + _ICON_ACK_TIMEOUT
-                while time.monotonic() < deadline and not self._stop.is_set():
-                    reply = connection.readline().decode("ascii", errors="ignore").strip()
-                    if reply == expected:
-                        if attempt > 1:
-                            LOGGER.info(
-                                "TFT icon accepted for key %s (attempt %s)",
-                                index + 1,
-                                attempt,
-                            )
-                        else:
-                            LOGGER.info("TFT icon accepted for key %s", index + 1)
-                        return True
-                    if reply.startswith(rejected):
-                        # the board saw rows go missing. retry now instead of
-                        # waiting out the timeout. an error for any other key is
-                        # stale - it belongs to an earlier attempt
-                        LOGGER.debug(
-                            "TFT icon rejected for key %s: %s", index + 1, reply
-                        )
-                        break
-                    if reply.startswith("PRESS\t") or reply == "ADECK_CAPS\tICON":
-                        self._handle_line(reply)
-                    elif reply.startswith("CFG_ERR\t"):
-                        LOGGER.debug("Device error during icon push: %s", reply)
-            except Exception as error:
-                LOGGER.debug("TFT app icon write failed: %s", error)
-                return False
-        return False
-
-    def _complete_request(self, request):
-        try:
-            self._sync(request.config, request.txid)
-            request.state = "synced"
-        except ProtocolError as error:
-            request.state = "sync_failed"
-            request.error = f"Device rejected config: {error}"
-            LOGGER.warning("Transaction %s rejected: %s", request.txid, error)
-        except Exception as error:
-            request.state = "sync_failed"
-            request.error = str(error)
-            self._disconnect(str(error))
-            self._resync.set()
-        finally:
-            request.finished.set()
-
-    def _run(self):
-        while not self._stop.is_set():
-            with self._state_lock:
-                connected = self._connection is not None
-            if not connected:
-                if serial is None or list_ports is None:
-                    with self._state_lock:
-                        self._last_error = "PySerial is not installed"
-                    self._stop.wait(3)
-                    continue
-                if not self._connect():
-                    self._stop.wait(2)
-                    continue
-
-            if self._resync.is_set():
-                self._resync.clear()
-                current = self.store.snapshot()
-                if current is not None:
-                    try:
-                        self._sync(current, secrets.token_hex(6))
-                    except ProtocolError as error:
-                        LOGGER.warning("Automatic resync rejected: %s", error)
-                    except Exception as error:
-                        self._disconnect(str(error))
-                        self._stop.wait(1)
-                        continue
-
-            try:
-                request = self._requests.get(timeout=0.05)
-                if request is None:
-                    continue
-                self._complete_request(request)
-                continue
-            except queue.Empty:
-                pass
-
-            try:
-                with self._state_lock:
-                    connection = self._connection
-                if connection is not None:
-                    line = connection.readline().decode("ascii", errors="ignore").strip()
-                    if line:
-                        self._handle_line(line)
-            except Exception as error:
-                self._disconnect(str(error))
-                self._stop.wait(1)
-        self._disconnect()
-
-
-class BridgeServer(ThreadingHTTPServer):
-    daemon_threads = True
-    allow_reuse_address = True
-
-    def __init__(self, address, handler, store, device, control_token):
-        super().__init__(address, handler)
-        self.store = store
-        self.device = device
-        self.control_token = control_token
-        self.save_lock = threading.Lock()
-        self.started_at = time.time()
-        # server_address reflects the port actually bound (address may ask for 0).
-        self.http_host = self.server_address[0]
-        self.http_port = self.server_address[1]
-
-
-class BridgeHandler(BaseHTTPRequestHandler):
-    static_files = {
-        "/": "index.html",
-        "/index.html": "index.html",
-        "/script.js": "script.js",
-        "/style.css": "style.css",
-        "/sw.js": "sw.js",
-        "/manifest.webmanifest": "manifest.webmanifest",
-        "/icon-192.png": "icon-192.png",
-        "/icon-512.png": "icon-512.png",
-        "/icon-maskable-512.png": "icon-maskable-512.png",
-        "/favicon.ico": "adeck.ico",
-        "/adeck.ico": "adeck.ico",
-    }
-
-    def log_message(self, format, *args):
-        if debug_enabled():
-            LOGGER.debug("%s - %s", self.address_string(), format % args)
-
-    def _host_allowed(self):
-        host = self.headers.get("Host", "")
-        try:
-            return urlparse("//" + host).hostname in LOCAL_HOSTS
-        except ValueError:
-            return False
-
-    def _origin_allowed(self):
-        if not self._host_allowed():
-            return False
-        origin = self.headers.get("Origin")
-        if not origin:
-            return True
-        if origin == "null":
-            return False
-        try:
-            parsed = urlparse(origin)
-            host = urlparse("//" + self.headers["Host"])
-            return (
-                parsed.scheme == "http"
-                and parsed.hostname == host.hostname
-                and (parsed.port or 80) == (host.port or 80)
-            )
-        except ValueError:
-            return False
-
-    def _cors(self):
-        origin = self.headers.get("Origin")
-        if origin and self._origin_allowed():
-            self.send_header("Access-Control-Allow-Origin", origin)
-            self.send_header("Vary", "Origin")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, X-ADeck-Token")
-
-    def _json(self, status, payload):
-        body = json.dumps(payload).encode("utf-8")
-        self.send_response(status)
-        self._cors()
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("X-Content-Type-Options", "nosniff")
-        self.end_headers()
-        self.wfile.write(body)
-
-    def _png(self, body, cacheable=False):
-        self.send_response(200)
-        self._cors()
-        self.send_header("Content-Type", "image/png")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header(
-            "Cache-Control", "private, max-age=86400" if cacheable else "no-store"
-        )
-        self.send_header("X-Content-Type-Options", "nosniff")
-        self.end_headers()
-        self.wfile.write(body)
-
-    def _api_allowed(self):
-        if self._origin_allowed():
-            return True
-        self._json(403, {"ok": False, "error": "Local same-origin request required"})
-        return False
-
-    def _system_payload(self):
-        device = self.server.device
-        store = self.server.store
-        config = store.snapshot()
-        integration = {}
-        task_actions = []
-        tasks = []
-        control_error = None
-        try:
-            control = control_module()
-            integration = control.integration_state()
-            task_actions = sorted(control.TASK_ACTIONS)
-            tasks = control.list_tasks(5)
-        except Exception as error:
-            control_error = str(error)
-            LOGGER.warning("Control helper unavailable: %s", error)
-        try:
-            ports = device.available_ports()
-        except Exception as error:
-            ports = []
-            LOGGER.warning("Port enumeration failed: %s", error)
-        arduino_cli = BUNDLED_CLI.is_file() or shutil.which("arduino-cli") is not None
-        pyserial = getattr(serial, "__version__", None) if serial is not None else None
-        return {
-            "ok": True,
-            "service": SERVICE_NAME,
-            "bridge_version": APP_VERSION,
-            "protocol_version": PROTOCOL_VERSION,
-            "backend": {
-                "pid": os.getpid(),
-                "host": self.server.http_host,
-                "port": self.server.http_port,
-                "uptime_seconds": int(max(0, time.time() - self.server.started_at)),
-                "python": sys.version.split()[0],
-                "debug": debug_enabled(),
-            },
-            "device": device.status(),
-            "requested_port": device.requested_port,
-            "serial_ports": ports,
-            "config": {
-                "saved": config is not None,
-                "path": str(store.path),
-                "backup_path": str(store.backup_path),
-                "active_profile": config["active_profile"] if config else None,
-                "profile_count": len(config["profiles"]) if config else 0,
-            },
-            "environment": {
-                "pyserial": pyserial,
-                "venv": VENV_PYTHON.is_file(),
-                "arduino_cli": arduino_cli,
-                "log_dir": str(LOCAL_DATA_DIR),
-                "data_dir": str(DATA_DIR),
-                "setup_complete": bool(
-                    VENV_PYTHON.is_file() and pyserial and arduino_cli
-                ),
-            },
-            "integration": integration,
-            "task_actions": task_actions,
-            "tasks": tasks,
-            "control_error": control_error,
-        }
-
-    def _logs_payload(self, query):
-        params = parse_qs(query)
-        source = (params.get("source") or ["app"])[0]
-        path = LOG_SOURCES.get(source)
-        if path is None:
-            return None, f"Unknown log source: {source}"
-        try:
-            requested = int((params.get("lines") or ["200"])[0])
-        except (TypeError, ValueError):
-            requested = 200
-        limit = max(1, min(500, requested))
-        try:
-            lines = control_module().tail_lines(path, limit)
-        except Exception as error:
-            return None, str(error)
-        return {
-            "ok": True,
-            "source": source,
-            "path": str(path),
-            "exists": path.is_file(),
-            "lines": lines,
-        }, None
-
-    def do_OPTIONS(self):
-        if not self._api_allowed():
-            return
-        self.send_response(204)
-        self._cors()
-        self.end_headers()
-
-    def do_GET(self):
-        path = urlparse(self.path).path
-        if path in {"/api/status", "/status"}:
-            if not self._api_allowed():
-                return
-            config = self.server.store.snapshot()
-            self._json(
-                200,
-                {
-                    "ok": True,
-                    "service": SERVICE_NAME,
-                    "bridge_version": APP_VERSION,
-                    "config_saved": config is not None,
-                    **self.server.device.status(),
-                },
-            )
-            return
-        if path == "/api/config":
-            if not self._api_allowed():
-                return
-            config = self.server.store.snapshot()
-            self._json(
-                200,
-                {"ok": True, "has_config": config is not None, "config": config},
-            )
-            return
-        if path == "/api/themes":
-            if not self._api_allowed():
-                return
-            self._json(200, theme_payload())
-            return
-        if path == "/api/apps":
-            if not self._api_allowed():
-                return
-            try:
-                payload = list_installed_apps()
-            except Exception as error:
-                LOGGER.warning("Installed app listing failed: %s", error)
-                payload = {"ok": True, "apps": [], "error": str(error)}
-            self._json(200, payload)
-            return
-        if path == "/api/app-icon":
-            if not self._api_allowed():
-                return
-            query = parse_qs(urlparse(self.path).query)
-            command = (query.get("command") or [""])[0]
-            if len(command) > COMMAND_MAX:
-                command = ""
-            try:
-                body = app_icon_png(command)
-            except Exception as error:
-                LOGGER.debug("App icon request failed: %s", error)
-                body = _placeholder_icon_png()
-            cacheable = bool(command) and body != _placeholder_icon_png()
-            self._png(body, cacheable=cacheable)
-            return
-
-        if path == "/api/app-color":
-            if not self._api_allowed():
-                return
-            query = parse_qs(urlparse(self.path).query)
-            command = (query.get("command") or [""])[0]
-            if len(command) > COMMAND_MAX:
-                command = ""
-            try:
-                color = dominant_icon_color(command)
-            except Exception as error:
-                LOGGER.debug("App colour request failed: %s", error)
-                color = "#c5c5c3"
-            self._json(200, {"ok": True, "command": command, "color": color})
-            return
-
-        if path == "/api/system":
-            if not self._api_allowed():
-                return
-            self._json(200, self._system_payload())
-            return
-
-        if path == "/api/logs":
-            if not self._api_allowed():
-                return
-            payload, error = self._logs_payload(urlparse(self.path).query)
-            if payload is None:
-                self._json(400, {"ok": False, "error": error})
-                return
-            self._json(200, payload)
-            return
-
-        if path == "/api/tasks":
-            if not self._api_allowed():
-                return
-            try:
-                tasks = control_module().list_tasks(10)
-            except Exception as error:
-                self._json(500, {"ok": False, "error": str(error)})
-                return
-            self._json(200, {"ok": True, "tasks": tasks})
-            return
-
-        if path.startswith("/api/tasks/"):
-            if not self._api_allowed():
-                return
-            task_id = path[len("/api/tasks/") :]
-            try:
-                task = control_module().read_task(task_id)
-            except Exception as error:
-                self._json(500, {"ok": False, "error": str(error)})
-                return
-            if task is None:
-                self._json(404, {"ok": False, "error": "Unknown task"})
-                return
-            self._json(200, {"ok": True, "task": task})
-            return
-
-        filename = self.static_files.get(path)
-        if filename is not None:
-            file_path = WEB_DIR / filename
-        elif path.startswith("/fonts/"):
-            rel = path[len("/fonts/") :]
-            if not rel or ".." in rel or rel.startswith(("/", "\\")):
-                self.send_error(404)
-                return
-            file_path = WEB_DIR / "fonts" / rel
-        else:
-            self.send_error(404)
-            return
-        try:
-            body = file_path.read_bytes()
-        except OSError:
-            self.send_error(404)
-            return
-        content_type = mimetypes.guess_type(file_path.name)[0] or "application/octet-stream"
-        self.send_response(200)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-cache")
-        self.send_header("X-Content-Type-Options", "nosniff")
-        self.end_headers()
-        self.wfile.write(body)
-
-    def _read_config(self):
-        if self.headers.get_content_type() != "application/json":
-            raise ValueError("Content-Type must be application/json")
-        try:
-            length = int(self.headers.get("Content-Length") or 0)
-        except ValueError:
-            raise ValueError("Invalid config size") from None
-        if length <= 0 or length > MAX_CONFIG_BYTES:
-            raise ValueError("Invalid config size")
-        try:
-            return json.loads(self.rfile.read(length).decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as error:
-            raise ValueError("Invalid JSON config") from error
-
-    def _read_json_body(self, maximum=MAX_CONTROL_BYTES):
-        if self.headers.get_content_type() != "application/json":
-            raise ValueError("Content-Type must be application/json")
-        try:
-            length = int(self.headers.get("Content-Length") or 0)
-        except ValueError:
-            raise ValueError("Invalid request size") from None
-        if length < 0 or length > maximum:
-            raise ValueError("Invalid request size")
-        if length == 0:
-            return {}
-        try:
-            payload = json.loads(self.rfile.read(length).decode("utf-8"))
-        except (UnicodeDecodeError, json.JSONDecodeError) as error:
-            raise ValueError("Invalid JSON body") from error
-        if not isinstance(payload, dict):
-            raise ValueError("Request body must be an object")
-        return payload
-
-    def _handle_control(self, payload):
-        """Device/backend/desktop actions used by the ADeck UI."""
-        device = self.server.device
-        action = str(payload.get("action") or "").strip().lower()
-        if not action:
-            self._json(400, {"ok": False, "error": "An action is required"})
-            return
-
-        if action == "reconnect":
-            port = payload.get("port")
-            if port is not None:
-                port = str(port).strip()
-                if port and not SERIAL_PORT_PATTERN.fullmatch(port):
-                    self._json(400, {"ok": False, "error": "Invalid serial port name"})
-                    return
-            device.request_reconnect(port)
-            self._json(
-                200,
-                {
-                    "ok": True,
-                    "action": action,
-                    "message": "Looking for ADeck"
-                    + (f" on {device.requested_port}" if device.requested_port else ""),
-                    "device": device.status(),
-                },
-            )
-            return
-
-        if action == "resync":
-            config = self.server.store.snapshot()
-            if config is None:
-                self._json(400, {"ok": False, "error": "Nothing has been saved yet"})
-                return
-            sync = device.request_sync(config)
-            self._json(200, {"ok": True, "action": action, **sync, "device": device.status()})
-            return
-
-        if action == "open-logs":
-            if os.name != "nt":
-                self._json(400, {"ok": False, "error": "Only supported on Windows"})
-                return
-            try:
-                LOCAL_DATA_DIR.mkdir(parents=True, exist_ok=True)
-                os.startfile(str(LOCAL_DATA_DIR))
-            except OSError as error:
-                self._json(500, {"ok": False, "error": str(error)})
-                return
-            self._json(
-                200,
-                {"ok": True, "action": action, "message": f"Opened {LOCAL_DATA_DIR}"},
-            )
-            return
-
-        try:
-            control = control_module()
-        except Exception as error:
-            self._json(500, {"ok": False, "error": f"Control helper unavailable: {error}"})
-            return
-
-        desktop_actions = {
-            "autostart-on": lambda: {"path": control.set_autostart(True)},
-            "autostart-off": lambda: {"path": control.set_autostart(False)},
-            "create-shortcuts": lambda: {"shortcuts": control.create_app_shortcuts()},
-            "remove-shortcuts": lambda: {"removed": control.remove_app_shortcuts()},
-            "register-protocol": lambda: {"command": control.register_protocol()},
-        }
-        if action in desktop_actions:
-            try:
-                result = desktop_actions[action]()
-            except Exception as error:
-                LOGGER.warning("Control action %s failed: %s", action, error)
-                self._json(400, {"ok": False, "error": str(error)})
-                return
-            self._json(
-                200,
-                {
-                    "ok": True,
-                    "action": action,
-                    **result,
-                    "integration": control.integration_state(),
-                },
-            )
-            return
-
-        try:
-            task = control.start_task(action, debug=debug_enabled())
-        except ValueError as error:
-            self._json(400, {"ok": False, "error": str(error)})
-            return
-        except Exception as error:
-            LOGGER.exception("Could not start task %s", action)
-            self._json(500, {"ok": False, "error": str(error)})
-            return
-        LOGGER.info("Started %s task %s", action, task.get("id"))
-        self._json(200, {"ok": True, "action": action, "task": task})
-
-    def do_POST(self):
-        path = urlparse(self.path).path
-        if path == "/api/control":
-            if not self._api_allowed():
-                return
-            try:
-                payload = self._read_json_body()
-            except ValueError as error:
-                self._json(400, {"ok": False, "error": str(error)})
-                return
-            try:
-                self._handle_control(payload)
-            except Exception as error:
-                LOGGER.exception("Control request failed")
-                self._json(500, {"ok": False, "error": str(error)})
-            return
-        if path == "/api/stop":
-            if not self._host_allowed() or not secrets.compare_digest(
-                self.headers.get("X-ADeck-Token", ""), self.server.control_token
-            ):
-                self._json(403, {"ok": False, "error": "Invalid control token"})
-                return
-            self._json(200, {"ok": True, "stopping": True})
-            threading.Thread(target=self.server.shutdown, daemon=True).start()
-            return
-        if path not in {"/api/config", "/flash"}:
-            self._json(404, {"ok": False, "error": "Not found"})
-            return
-        if not self._api_allowed():
-            return
-        try:
-            raw = self._read_config()
-            with self.server.save_lock:
-                saved = self.server.store.save(raw)
-                sync = self.server.device.request_sync(saved)
-            self._json(
-                200,
-                {
-                    "ok": True,
-                    "saved": True,
-                    **sync,
-                    **self.server.device.status(),
-                },
-            )
-        except ValueError as error:
-            self._json(400, {"ok": False, "error": str(error)})
-        except Exception as error:
-            LOGGER.exception("Config save failed")
-            self._json(500, {"ok": False, "error": str(error)})
-
-
-class InstanceLock:
-    def __init__(self, path=LOCK_PATH):
-        self.path = Path(path)
-        self.handle = None
-
-    def acquire(self):
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.handle = self.path.open("a+b")
-        self.handle.seek(0)
-        self.handle.write(b"\0")
-        self.handle.flush()
-        try:
-            if os.name == "nt":
-                import msvcrt
-
-                self.handle.seek(0)
-                msvcrt.locking(self.handle.fileno(), msvcrt.LK_NBLCK, 1)
-            else:
-                import fcntl
-
-                fcntl.flock(self.handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except OSError as error:
-            self.handle.close()
-            self.handle = None
-            raise RuntimeError("ADeck service is already running") from error
-
-    def release(self):
-        if self.handle is None:
-            return
-        try:
-            if os.name == "nt":
-                import msvcrt
-
-                self.handle.seek(0)
-                msvcrt.locking(self.handle.fileno(), msvcrt.LK_UNLCK, 1)
-            else:
-                import fcntl
-
-                fcntl.flock(self.handle.fileno(), fcntl.LOCK_UN)
-        finally:
-            self.handle.close()
-            self.handle = None
-
-
-def _control_token():
-    LOCAL_DATA_DIR.mkdir(parents=True, exist_ok=True)
-    try:
-        token = TOKEN_PATH.read_text(encoding="ascii").strip()
-        if re.fullmatch(r"[A-Za-z0-9_-]{32,128}", token):
-            return token
-    except OSError:
-        pass
-    token = secrets.token_urlsafe(32)
-    TOKEN_PATH.write_text(token, encoding="ascii")
-    try:
-        os.chmod(TOKEN_PATH, 0o600)
-    except OSError:
-        pass
-    return token
-
-
-def stop_runtime():
-    setup_logging()
-    host, port = "127.0.0.1", 8765
-    try:
-        runtime = json.loads(RUNTIME_PATH.read_text(encoding="utf-8"))
-        if runtime.get("host") in LOCAL_HOSTS:
-            host = runtime["host"]
-        port = int(runtime.get("port", port))
-    except (OSError, ValueError, TypeError):
-        pass
-    try:
-        token = TOKEN_PATH.read_text(encoding="ascii").strip()
-    except OSError:
-        print("ADeck service is not running")
-        return 0
-    request = urllib.request.Request(
-        f"http://{'[' + host + ']' if ':' in host else host}:{port}/api/stop",
-        method="POST",
-        headers={"X-ADeck-Token": token},
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=3) as response:
-            if response.status != 200:
-                raise RuntimeError(f"Stop request returned HTTP {response.status}")
-        print("ADeck service stopped")
-        return 0
-    except urllib.error.HTTPError as error:
-        raise RuntimeError(f"ADeck refused the stop request: HTTP {error.code}") from error
-    except (urllib.error.URLError, TimeoutError):
-        print("ADeck service is not running")
-        return 0
-
-
-def serve(args):
-    if args.host not in LOCAL_HOSTS:
-        raise ValueError("ADeck may only listen on localhost")
-    if not 1 <= args.port <= 65535:
-        raise ValueError("Port must be between 1 and 65535")
-    if args.debug:
-        os.environ["ADECK_DEBUG"] = "1"
-    setup_logging(debug=args.debug or debug_enabled())
-    lock = InstanceLock()
-    lock.acquire()
-    store = ConfigStore()
-    device = ADeckDevice(store, args.device_port)
-    server = None
-    old_handlers = {}
-    try:
-        token = _control_token()
-        server = BridgeServer((args.host, args.port), BridgeHandler, store, device, token)
-        _atomic_json(
-            RUNTIME_PATH,
-            {"pid": os.getpid(), "host": args.host, "port": args.port, "version": APP_VERSION},
-        )
-        device.start()
-        display_host = f"[{args.host}]" if ":" in args.host else args.host
-        url = f"http://{display_host}:{args.port}/"
-        LOGGER.info("Runtime started at %s", url)
-        print("ADeck is running at", url)
-
-        def request_shutdown(_signum=None, _frame=None):
-            if server is not None:
-                threading.Thread(target=server.shutdown, daemon=True).start()
-
-        if threading.current_thread() is threading.main_thread():
-            for signum in (signal.SIGINT, signal.SIGTERM):
-                old_handlers[signum] = signal.getsignal(signum)
-                signal.signal(signum, request_shutdown)
-        if args.open:
-            timer = threading.Timer(0.5, lambda: webbrowser.open(url))
-            timer.daemon = True
-            timer.start()
-        server.serve_forever(poll_interval=0.2)
-    finally:
-        LOGGER.info("Runtime stopping")
-        if server is not None:
-            server.server_close()
-        device.stop()
-        try:
-            runtime = json.loads(RUNTIME_PATH.read_text(encoding="utf-8"))
-            if runtime.get("pid") == os.getpid():
-                RUNTIME_PATH.unlink(missing_ok=True)
-        except (OSError, ValueError, TypeError):
-            pass
-        for signum, handler in old_handlers.items():
-            signal.signal(signum, handler)
-        lock.release()
-
-
-def parse_args(argv=None):
-    parser = argparse.ArgumentParser(description="ADeck local service")
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=8765)
-    parser.add_argument("--device-port")
-    parser.add_argument("--open", action="store_true")
-    parser.add_argument("--stop", action="store_true")
-    parser.add_argument(
-        "--debug",
-        action="store_true",
-        help="verbose serial/HTTP logging (or set ADECK_DEBUG=1)",
-    )
-    return parser.parse_args(argv)
-
-
-def main(argv=None):
-    args = parse_args(argv)
-    try:
-        return stop_runtime() if args.stop else (serve(args) or 0)
-    except Exception as error:
-        setup_logging()
-        LOGGER.error("%s", error)
-        print("Error:", error)
-        return 1
-
-
-if __name__ == "__main__":
-    sys.exit(main())

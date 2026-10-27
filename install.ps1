@@ -6,7 +6,7 @@ $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $venv = Join-Path $root ".venv"
 $python = Join-Path $venv "Scripts\python.exe"
 $pythonw = Join-Path $venv "Scripts\pythonw.exe"
-$deck = Join-Path $root "deck.py"
+$deck = Join-Path $root "backend\deck.py"
 $requirements = Join-Path $root "requirements.txt"
 $startup = [Environment]::GetFolderPath("Startup")
 $shortcutPath = Join-Path $startup "ADeck.lnk"
@@ -100,7 +100,7 @@ function Get-ProcessExitCodeText {
   try {
     $Process.Refresh()
   } catch {
-    # Ignore refresh failures; fall through to best-effort ExitCode.
+
   }
   if (-not $Process.HasExited) {
     return "still-running"
@@ -145,7 +145,7 @@ function Wait-ADeckBackendHealthy {
 
 function Start-ADeckBackendProcess {
   New-Item -ItemType Directory -Path $logDir -Force | Out-Null
-  # Truncate prior launch logs so this attempt's exit reason is unambiguous.
+
   Set-Content -LiteralPath $stdoutLog -Value "" -Encoding utf8
   Set-Content -LiteralPath $stderrLog -Value "" -Encoding utf8
 
@@ -171,7 +171,7 @@ function Start-ADeckBackendProcess {
     try {
       $process.Refresh()
     } catch {
-      # Process object may become invalid after exit.
+
     }
 
     $lastStatus = Get-ADeckHealth
@@ -186,7 +186,7 @@ function Start-ADeckBackendProcess {
       $stderrText = Get-RuntimeLogSnippet -Path $stderrLog
       $combined = "$stdoutText`n$stderrText"
 
-      # Single-instance exit: another owner may already be healthy — reuse it.
+
       if (Test-AlreadyRunningMessage $combined) {
         Start-Sleep -Milliseconds 400
         $recheck = Get-ADeckHealth
@@ -258,10 +258,10 @@ try {
   }
 
   Invoke-Stage "Install and verify firmware" {
-    # --if-needed skips reflash when ADECK_PONG already succeeds.
+
     Invoke-Checked `
       -FilePath $python `
-      -Arguments @((Join-Path $root "install_firmware.py"), "--if-needed") `
+      -Arguments @((Join-Path $root "backend\install_firmware.py"), "--if-needed") `
       -FailureMessage "Firmware installation failed"
   }
 
@@ -289,7 +289,7 @@ try {
       ) {
         break
       }
-      # Backend healthy but hardware still offline: keep waiting for USB.
+
       Start-Sleep -Milliseconds 500
     }
 
@@ -315,13 +315,13 @@ try {
   }
 
   Invoke-Stage "Create desktop app entry" {
-    # Desktop/Start Menu icon + adeck:// handler. Not fatal: ADeck still runs
-    # from Start ADeck.bat and the browser if this step cannot complete.
-    & $python (Join-Path $root "adeck_control.py") shortcuts
+
+
+    & $python (Join-Path $root "backend\adeck_control.py") shortcuts
     if ($LASTEXITCODE -ne 0) {
       Write-Host "Could not create the desktop icon. Use the System page in ADeck to retry." -ForegroundColor Yellow
     }
-    & $python (Join-Path $root "adeck_control.py") protocol
+    & $python (Join-Path $root "backend\adeck_control.py") protocol
     if ($LASTEXITCODE -ne 0) {
       Write-Host "Could not register the adeck:// handler (optional)." -ForegroundColor Yellow
     }
@@ -330,7 +330,7 @@ try {
 
   Invoke-Stage "Open ADeck" {
     Write-Host "Opening ADeck in its own app window ..."
-    & $python (Join-Path $root "adeck_control.py") app
+    & $python (Join-Path $root "backend\adeck_control.py") app
     if ($LASTEXITCODE -ne 0) {
       Start-Process "http://127.0.0.1:8765/"
     }

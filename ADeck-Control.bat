@@ -47,15 +47,15 @@ echo Python was not found. Run Setup ADeck.bat first.
 exit /b 1
 
 :run_adeck_venv
-"%~dp0.venv\Scripts\python.exe" "%~dp0adeck_control.py" %*
+"%~dp0.venv\Scripts\python.exe" "%~dp0backend\adeck_control.py" %*
 exit /b %ERRORLEVEL%
 
 :run_adeck_py
-py -3 "%~dp0adeck_control.py" %*
+py -3 "%~dp0backend\adeck_control.py" %*
 exit /b %ERRORLEVEL%
 
 :run_adeck_python
-python "%~dp0adeck_control.py" %*
+python "%~dp0backend\adeck_control.py" %*
 exit /b %ERRORLEVEL%
 
 :start

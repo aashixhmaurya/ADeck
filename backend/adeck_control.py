@@ -1,5 +1,3 @@
-"""ADeck diagnostics, repair, start/stop, and control-menu helpers."""
-
 from __future__ import annotations
 
 import argparse
@@ -18,14 +16,15 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-BASE_DIR = Path(__file__).resolve().parent
+PY_DIR = Path(__file__).resolve().parent
+BASE_DIR = PY_DIR.parent
 VENV_PYTHON = BASE_DIR / ".venv" / "Scripts" / "python.exe"
 VENV_PYTHONW = BASE_DIR / ".venv" / "Scripts" / "pythonw.exe"
-DECK = BASE_DIR / "deck.py"
+DECK = PY_DIR / "deck.py"
 CONTROL_SCRIPT = Path(__file__).resolve()
 REQUIREMENTS = BASE_DIR / "requirements.txt"
-INSTALL_FIRMWARE = BASE_DIR / "install_firmware.py"
-WEB_DIR = BASE_DIR / "ADeck Web app"
+INSTALL_FIRMWARE = PY_DIR / "install_firmware.py"
+WEB_DIR = BASE_DIR / "web app"
 APP_ICON = WEB_DIR / "adeck.ico"
 HEALTH_URL = "http://127.0.0.1:8765/api/status"
 WEB_URL = "http://127.0.0.1:8765/"
@@ -51,7 +50,6 @@ TASK_HISTORY = 20
 TASK_STALE_SECONDS = 180
 APP_BROWSERS = ("brave.exe", "chrome.exe", "msedge.exe", "vivaldi.exe", "chromium.exe")
 
-
 @dataclass
 class CheckItem:
     name: str
@@ -59,24 +57,20 @@ class CheckItem:
     detail: str = ""
     action: str = ""
 
-
 def debug_enabled(flag: bool = False) -> bool:
     if flag:
         return True
     value = os.environ.get("ADECK_DEBUG", "").strip().lower()
     return value in {"1", "true", "yes", "on"}
 
-
 def debug_print(enabled: bool, message: str) -> None:
     if enabled:
         print(f"[debug] {message}", flush=True)
-
 
 def python_exe() -> Path:
     if VENV_PYTHON.is_file():
         return VENV_PYTHON
     return Path(sys.executable)
-
 
 def run(
     command: list[object],
@@ -97,7 +91,6 @@ def run(
         check=check,
     )
 
-
 def fetch_status(timeout: float = 1.0) -> dict | None:
     try:
         with urllib.request.urlopen(HEALTH_URL, timeout=timeout) as response:
@@ -108,7 +101,6 @@ def fetch_status(timeout: float = 1.0) -> dict | None:
         return None
     return None
 
-
 def backend_healthy(status: dict | None = None) -> bool:
     status = status if status is not None else fetch_status()
     return bool(
@@ -117,7 +109,6 @@ def backend_healthy(status: dict | None = None) -> bool:
         and status.get("service") == SERVICE_NAME
         and status.get("bridge_version")
     )
-
 
 def port_listening(port: int = 8765) -> bool:
     import socket
@@ -131,9 +122,8 @@ def port_listening(port: int = 8765) -> bool:
     finally:
         sock.close()
 
-
 def runtime_lock_held() -> bool:
-    """True when another process currently holds runtime.lock."""
+
     if not LOCK_PATH.exists():
         return False
     handle = None
@@ -164,9 +154,8 @@ def runtime_lock_held() -> bool:
             except OSError:
                 pass
 
-
 def runtime_pid_alive() -> int | None:
-    """Return runtime.json pid if that process still exists."""
+
     try:
         payload = json.loads(RUNTIME_PATH.read_text(encoding="utf-8"))
         pid = int(payload.get("pid"))
@@ -186,9 +175,8 @@ def runtime_pid_alive() -> int | None:
     except OSError:
         return None
 
-
 def backend_inconsistent() -> bool:
-    """Lock/process/port present without a healthy ADeck /api/status."""
+
     if backend_healthy():
         return False
     return bool(
@@ -197,7 +185,6 @@ def backend_inconsistent() -> bool:
         or deck_processes()
         or port_listening(8765)
     )
-
 
 def log_mentions_already_running(since_sizes: dict[Path, int] | None = None) -> bool:
     needle = "ADeck service is already running"
@@ -217,17 +204,14 @@ def log_mentions_already_running(since_sizes: dict[Path, int] | None = None) -> 
             continue
     return False
 
-
 def mark(ok: bool) -> str:
     return "[OK]" if ok else "[FAIL]"
-
 
 def print_check(item: CheckItem) -> None:
     suffix = f" - {item.detail}" if item.detail else ""
     print(f"{mark(item.ok)} {item.name}{suffix}")
     if not item.ok and item.action:
         print(f"     -> {item.action}")
-
 
 def check_python() -> CheckItem:
     try:
@@ -242,7 +226,6 @@ def check_python() -> CheckItem:
     except Exception as error:
         return CheckItem("Python", False, str(error), "Install Python 3 from python.org")
 
-
 def check_venv() -> CheckItem:
     ok = VENV_PYTHON.is_file() and VENV_PYTHONW.is_file()
     return CheckItem(
@@ -251,7 +234,6 @@ def check_venv() -> CheckItem:
         str(BASE_DIR / ".venv") if ok else "missing",
         "Run Install / Repair from ADeck-Control.bat",
     )
-
 
 def check_pyserial(debug: bool) -> CheckItem:
     if not VENV_PYTHON.is_file():
@@ -277,7 +259,6 @@ def check_pyserial(debug: bool) -> CheckItem:
         detail,
         "Run Install / Repair to reinstall requirements.txt",
     )
-
 
 def check_arduino_cli(debug: bool) -> CheckItem:
     candidates = []
@@ -306,17 +287,15 @@ def check_arduino_cli(debug: bool) -> CheckItem:
         "Arduino CLI",
         False,
         "not found",
-        "Run Install / Repair, or .\\.venv\\Scripts\\python.exe .\\install_firmware.py --cli-only",
+        "Run Install / Repair, or .\\.venv\\Scripts\\python.exe .\\backend\\install_firmware.py --cli-only",
     )
 
-
 def _import_firmware():
-    if str(BASE_DIR) not in sys.path:
-        sys.path.insert(0, str(BASE_DIR))
+    if str(PY_DIR) not in sys.path:
+        sys.path.insert(0, str(PY_DIR))
     import install_firmware as firmware
 
     return firmware
-
 
 def check_board_and_pong(debug: bool) -> tuple[CheckItem, CheckItem, CheckItem]:
     status = fetch_status()
@@ -410,7 +389,6 @@ def check_board_and_pong(debug: bool) -> tuple[CheckItem, CheckItem, CheckItem]:
         else:
             os.environ["ADECK_QUIET"] = previous_quiet
 
-
 def check_backend(status: dict | None) -> CheckItem:
     if backend_healthy(status):
         version = status.get("bridge_version") if status else "?"
@@ -441,7 +419,6 @@ def check_backend(status: dict | None) -> CheckItem:
         "Choose Start ADeck, or Install / Repair if startup keeps failing",
     )
 
-
 def check_port_8765() -> CheckItem:
     ok = port_listening(8765)
     if ok and not backend_healthy():
@@ -457,7 +434,6 @@ def check_port_8765() -> CheckItem:
         "listening" if ok else "not listening",
         "Start ADeck from ADeck-Control.bat",
     )
-
 
 def check_connected(status: dict | None) -> CheckItem:
     if not backend_healthy(status):
@@ -489,7 +465,6 @@ def check_connected(status: dict | None) -> CheckItem:
         "Backend is healthy; reconnect USB or use Repair if the board stays offline",
     )
 
-
 def check_config() -> CheckItem:
     if not CONFIG_PATH.is_file():
         return CheckItem(
@@ -498,8 +473,8 @@ def check_config() -> CheckItem:
             "no saved config yet (OK until first Save)",
         )
     try:
-        if str(BASE_DIR) not in sys.path:
-            sys.path.insert(0, str(BASE_DIR))
+        if str(PY_DIR) not in sys.path:
+            sys.path.insert(0, str(PY_DIR))
         import deck
 
         raw = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
@@ -512,7 +487,6 @@ def check_config() -> CheckItem:
             str(error).splitlines()[0][:200],
             f"Inspect or restore {CONFIG_PATH} / config.backup.json",
         )
-
 
 def cmd_check(debug: bool = False) -> int:
     print("ADeck Check System")
@@ -538,7 +512,6 @@ def cmd_check(debug: bool = False) -> int:
         return 1
     print("All checks passed.")
     return 0
-
 
 def cmd_status() -> int:
     status = fetch_status()
@@ -604,7 +577,6 @@ def cmd_status() -> int:
     print(f"Config:    {'OK' if config_ok else 'INVALID'} ({CONFIG_PATH})")
     return 0
 
-
 _ERROR_LINE = re.compile(r"(error|exception|traceback|failed|fail\b)", re.IGNORECASE)
 _LOG_TIMESTAMP = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})")
 _BENIGN_HISTORICAL = (
@@ -612,7 +584,6 @@ _BENIGN_HISTORICAL = (
     re.compile(r"ClearCommError failed", re.IGNORECASE),
 )
 _RECENT_ERROR_SECONDS = 6 * 3600
-
 
 def _recent_error_lines(path: Path, limit: int = 40) -> list[str]:
     if not path.is_file():
@@ -625,7 +596,6 @@ def _recent_error_lines(path: Path, limit: int = 40) -> list[str]:
     matched = [line for line in lines if _ERROR_LINE.search(line)]
     return matched[-limit:]
 
-
 def _line_epoch(line: str) -> float | None:
     match = _LOG_TIMESTAMP.match(line)
     if not match:
@@ -635,10 +605,8 @@ def _line_epoch(line: str) -> float | None:
     except (ValueError, OverflowError):
         return None
 
-
 def _is_benign_historical(line: str) -> bool:
     return any(pattern.search(line) for pattern in _BENIGN_HISTORICAL)
-
 
 def _classify_error_lines(
     lines: list[str],
@@ -646,7 +614,7 @@ def _classify_error_lines(
     now: float,
     backend_ok: bool,
 ) -> tuple[list[str], list[str]]:
-    """Split matched log lines into current/recent vs older historical entries."""
+
     current: list[str] = []
     historical: list[str] = []
     cutoff = now - _RECENT_ERROR_SECONDS
@@ -658,7 +626,6 @@ def _classify_error_lines(
         else:
             historical.append(line)
     return current, historical
-
 
 def _print_error_section(title: str, grouped: list[tuple[str, list[str]]]) -> bool:
     printed = False
@@ -672,7 +639,6 @@ def _print_error_section(title: str, grouped: list[tuple[str, list[str]]]) -> bo
         for line in lines[-15:]:
             print(line)
     return printed
-
 
 def cmd_errors() -> int:
     print("ADeck Latest Errors")
@@ -710,16 +676,14 @@ def cmd_errors() -> int:
     print(f"\nFull logs: {LOCAL_DATA}")
     return 0
 
-
 def cmd_logs() -> int:
     LOCAL_DATA.mkdir(parents=True, exist_ok=True)
     os.startfile(str(LOCAL_DATA))
     print(f"Opened {LOCAL_DATA}")
     return 0
 
-
 def deck_process_entries() -> list[tuple[int, int]]:
-    """Return (pid, parent_pid) pairs for this install's deck.py processes."""
+
     if os.name != "nt":
         return []
     marker = str(DECK.resolve()).casefold().replace("'", "''")
@@ -747,20 +711,17 @@ def deck_process_entries() -> list[tuple[int, int]]:
                 entries.append((pid, int(right)))
     return entries
 
-
 def deck_processes() -> list[int]:
-    """Root deck.py processes only (venv pythonw launcher + child counts as one)."""
+
     entries = deck_process_entries()
     pids = {pid for pid, _ in entries}
     return sorted(pid for pid, parent in entries if parent not in pids)
 
-
 def terminate_deck_processes(debug: bool = False) -> None:
-    # Kill every matching pid so launcher stubs and workers both exit.
+
     for pid in sorted({pid for pid, _ in deck_process_entries()}, reverse=True):
         debug_print(debug, f"terminating leftover deck process {pid}")
         run(["taskkill", "/PID", str(pid), "/F"], timeout=10)
-
 
 def cmd_stop(debug: bool = False) -> int:
     exe = python_exe()
@@ -789,7 +750,6 @@ def cmd_stop(debug: bool = False) -> int:
         return 1
     return 0
 
-
 def wait_until_ready(timeout: float = 30.0) -> dict | None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -798,7 +758,6 @@ def wait_until_ready(timeout: float = 30.0) -> dict | None:
             return status
         time.sleep(0.5)
     return None
-
 
 def cmd_start(open_browser: bool = True, debug: bool = False) -> int:
     if not VENV_PYTHONW.is_file():
@@ -822,7 +781,7 @@ def cmd_start(open_browser: bool = True, debug: bool = False) -> int:
             f"waiting on existing process(es): {existing}; "
             f"port={port_listening(8765)}; lock={runtime_lock_held()}",
         )
-        # Lock held with no listener/process is unlikely to become healthy — fail faster.
+
         wait_s = 12.0
         if runtime_lock_held() and not port_listening(8765) and not existing:
             wait_s = 2.0
@@ -834,7 +793,7 @@ def cmd_start(open_browser: bool = True, debug: bool = False) -> int:
             if status and not status.get("connected"):
                 print("Hardware is offline. The web UI is available; reconnect USB to sync.")
             return 0
-        # Stale process / port / lock without a healthy API — clear and continue.
+
         print("Runtime looks inconsistent (lock/process without healthy /api/status). Clearing...")
         terminate_deck_processes(debug)
         deadline = time.monotonic() + 5
@@ -888,7 +847,6 @@ def cmd_start(open_browser: bool = True, debug: bool = False) -> int:
             webbrowser.open(WEB_URL)
         return 0
 
-    # Launcher may have lost the single-instance race — recheck before failing.
     if log_mentions_already_running(log_sizes):
         status = fetch_status()
         if backend_healthy(status):
@@ -915,7 +873,6 @@ def cmd_start(open_browser: bool = True, debug: bool = False) -> int:
     print(f"Check logs in: {LOCAL_DATA}")
     return 1
 
-
 def ensure_venv(debug: bool) -> None:
     if VENV_PYTHON.is_file() and VENV_PYTHONW.is_file():
         probe = run(
@@ -935,7 +892,6 @@ def ensure_venv(debug: bool) -> None:
     if not (VENV_PYTHON.is_file() and VENV_PYTHONW.is_file()):
         raise RuntimeError("The Python environment is incomplete after setup.")
     debug_print(debug, "venv ready")
-
 
 def ensure_deps(debug: bool) -> None:
     result = run(
@@ -964,7 +920,6 @@ def ensure_deps(debug: bool) -> None:
         raise RuntimeError(detail)
     debug_print(debug, "dependencies ready")
 
-
 def ensure_cli(debug: bool) -> None:
     result = run([VENV_PYTHON, str(INSTALL_FIRMWARE), "--cli-only"], timeout=300)
     if result.returncode != 0:
@@ -974,20 +929,14 @@ def ensure_cli(debug: bool) -> None:
         raise RuntimeError(detail)
     debug_print(debug, "Arduino CLI ready")
 
-
 def noninteractive() -> bool:
-    """True when nobody can answer a prompt (background task, no console).
 
-    Windows reports the NUL device as a TTY, so an explicit flag is needed for
-    detached task processes.
-    """
     if os.environ.get("ADECK_NONINTERACTIVE", "").strip().lower() in {"1", "true", "yes", "on"}:
         return True
     try:
         return not sys.stdin.isatty()
     except (AttributeError, ValueError, OSError):
         return True
-
 
 def ask_yes_no(prompt: str, default: bool = False) -> bool:
     if noninteractive():
@@ -1000,7 +949,6 @@ def ask_yes_no(prompt: str, default: bool = False) -> bool:
     if not answer:
         return default
     return answer in {"y", "yes"}
-
 
 def cmd_repair(debug: bool = False, force_firmware: bool = False) -> int:
     print("ADeck Install / Repair")
@@ -1068,7 +1016,6 @@ def cmd_repair(debug: bool = False, force_firmware: bool = False) -> int:
         print(f"Repair failed: {error}")
         return 1
 
-
 def cmd_reinstall_firmware(debug: bool = False) -> int:
     print("ADeck Reinstall Firmware")
     print("=" * 40)
@@ -1082,17 +1029,11 @@ def cmd_reinstall_firmware(debug: bool = False) -> int:
         return result.returncode
     return cmd_start(open_browser=False, debug=debug)
 
-
 def cmd_restart(debug: bool = False) -> int:
     print("ADeck Restart")
     print("=" * 40)
     cmd_stop(debug)
     return cmd_start(open_browser=False, debug=debug)
-
-
-# --- background tasks ----------------------------------------------------
-# The web UI triggers maintenance work through detached task processes so a
-# task keeps running (and keeps logging) even while the backend restarts.
 
 TASK_ACTIONS: dict[str, Callable[[bool], int]] = {
     "check": lambda debug: cmd_check(debug),
@@ -1105,20 +1046,16 @@ TASK_ACTIONS: dict[str, Callable[[bool], int]] = {
     "reinstall-firmware": lambda debug: cmd_reinstall_firmware(debug),
 }
 
-# "stop" is deliberate, everything else here should end with a live service.
 TASK_RESTORE_SERVICE = frozenset({"restart", "repair", "reinstall-firmware", "start"})
-
 
 def _task_paths(task_id: str) -> tuple[Path, Path]:
     return TASKS_DIR / f"{task_id}.json", TASKS_DIR / f"{task_id}.log"
-
 
 def _write_json(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temp = path.with_name(path.name + ".tmp")
     temp.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     os.replace(temp, path)
-
 
 def _read_json(path: Path) -> dict | None:
     try:
@@ -1127,9 +1064,8 @@ def _read_json(path: Path) -> dict | None:
         return None
     return payload if isinstance(payload, dict) else None
 
-
 def tail_lines(path: Path, limit: int = TASK_OUTPUT_LIMIT, max_bytes: int = 256 * 1024) -> list[str]:
-    """Last `limit` lines of a log file, reading only the tail of the file."""
+
     try:
         size = path.stat().st_size
         with path.open("rb") as handle:
@@ -1141,7 +1077,6 @@ def tail_lines(path: Path, limit: int = TASK_OUTPUT_LIMIT, max_bytes: int = 256 
         return []
     text = data.decode("utf-8", errors="replace")
     return [line.rstrip() for line in text.splitlines()][-max(1, limit) :]
-
 
 def _prune_tasks(keep: int = TASK_HISTORY) -> None:
     try:
@@ -1155,9 +1090,8 @@ def _prune_tasks(keep: int = TASK_HISTORY) -> None:
             except OSError:
                 pass
 
-
 def start_task(action: str, *, debug: bool = False) -> dict:
-    """Launch a detached task process and return its initial record."""
+
     if action not in TASK_ACTIONS:
         raise ValueError(f"Unknown task action: {action}")
     TASKS_DIR.mkdir(parents=True, exist_ok=True)
@@ -1193,8 +1127,7 @@ def start_task(action: str, *, debug: bool = False) -> dict:
         creationflags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(
             subprocess, "CREATE_NEW_PROCESS_GROUP", 0
         )
-    # Tasks are unattended: no prompt may block them, and Windows reports NUL
-    # as a TTY, so the flag has to be explicit for the task and its children.
+
     environment = dict(os.environ, ADECK_NONINTERACTIVE="1")
     try:
         with log_path.open("a", encoding="utf-8") as log:
@@ -1218,7 +1151,6 @@ def start_task(action: str, *, debug: bool = False) -> dict:
     _write_json(json_path, record)
     return record
 
-
 def read_task(task_id: str, *, lines: int = TASK_OUTPUT_LIMIT) -> dict | None:
     if not TASK_ID_PATTERN.fullmatch(task_id or ""):
         return None
@@ -1236,7 +1168,6 @@ def read_task(task_id: str, *, lines: int = TASK_OUTPUT_LIMIT) -> dict | None:
     record["output"] = tail_lines(log_path, lines)
     return record
 
-
 def list_tasks(limit: int = 10) -> list[dict]:
     try:
         files = sorted(TASKS_DIR.glob("*.json"), key=lambda item: item.name, reverse=True)
@@ -1249,9 +1180,8 @@ def list_tasks(limit: int = 10) -> list[dict]:
             records.append(record)
     return records
 
-
 def cmd_task(task_id: str, action: str, debug: bool = False) -> int:
-    """Task body: runs inside the detached process, logging to the task log."""
+
     if action not in TASK_ACTIONS:
         print(f"Unknown task action: {action}")
         return 2
@@ -1275,8 +1205,7 @@ def cmd_task(task_id: str, action: str, debug: bool = False) -> int:
     code = 1
     try:
         code = TASK_ACTIONS[action](debug)
-        # Maintenance that failed midway can leave the service down. The UI is
-        # served by that service, so bring it back instead of stranding the app.
+
         if action in TASK_RESTORE_SERVICE and not backend_healthy():
             print()
             print("Service is not running after this task; starting it again...")
@@ -1298,10 +1227,6 @@ def cmd_task(task_id: str, action: str, debug: bool = False) -> int:
         _write_json(json_path, record)
     return code
 
-
-# --- Windows desktop integration ----------------------------------------
-
-
 def _powershell(script: str, *, env: dict[str, str] | None = None, timeout: float = 60):
     environment = dict(os.environ)
     if env:
@@ -1316,7 +1241,6 @@ def _powershell(script: str, *, env: dict[str, str] | None = None, timeout: floa
         timeout=timeout,
         env=environment,
     )
-
 
 _SHORTCUT_SCRIPT = """
 $ErrorActionPreference = 'Stop'
@@ -1343,9 +1267,8 @@ foreach ($slot in $env:ADECK_SLOTS.Split(',')) {
 $results | ConvertTo-Json -Compress
 """
 
-
 def _create_shortcut(slots: dict[str, tuple[str, str, str]]) -> dict[str, str]:
-    """Create .lnk files. slots maps a name to (shell folder, target, arguments)."""
+
     if os.name != "nt":
         raise RuntimeError("Shortcuts are only supported on Windows")
     if not slots:
@@ -1367,7 +1290,6 @@ def _create_shortcut(slots: dict[str, tuple[str, str, str]]) -> dict[str, str]:
     payload = _read_powershell_json(result.stdout)
     return {str(key): str(value) for key, value in payload.items()}
 
-
 def _read_powershell_json(text: str) -> dict:
     for line in reversed((text or "").strip().splitlines()):
         candidate = line.strip()
@@ -1380,18 +1302,15 @@ def _read_powershell_json(text: str) -> dict:
                 return payload
     return {}
 
-
 def _launcher_target() -> tuple[str, str]:
-    """Target/arguments used by the ADeck app shortcut."""
-    return str(VENV_PYTHONW), f'"{CONTROL_SCRIPT}" app'
 
+    return str(VENV_PYTHONW), f'"{CONTROL_SCRIPT}" app'
 
 def _autostart_target() -> tuple[str, str]:
     return str(VENV_PYTHONW), f'"{DECK}"'
 
-
 def _shortcut_candidates() -> dict[str, list[Path]]:
-    """Best-effort shortcut locations, used for state reporting without PowerShell."""
+
     appdata = Path(os.environ.get("APPDATA", Path.home()))
     home = Path(os.environ.get("USERPROFILE", Path.home()))
     onedrive = os.environ.get("OneDrive") or os.environ.get("OneDriveConsumer")
@@ -1405,7 +1324,6 @@ def _shortcut_candidates() -> dict[str, list[Path]]:
         "startup": [programs / "Startup" / SHORTCUT_NAME],
     }
 
-
 def _record_integration(updates: dict) -> None:
     payload = _read_json(INTEGRATION_PATH) or {}
     payload.update(updates)
@@ -1414,7 +1332,6 @@ def _record_integration(updates: dict) -> None:
         _write_json(INTEGRATION_PATH, payload)
     except OSError:
         pass
-
 
 def _existing_shortcut(slot: str) -> Path | None:
     recorded = _read_json(INTEGRATION_PATH) or {}
@@ -1431,7 +1348,6 @@ def _existing_shortcut(slot: str) -> Path | None:
             continue
     return None
 
-
 def create_app_shortcuts(desktop: bool = True, start_menu: bool = True) -> dict[str, str]:
     target, arguments = _launcher_target()
     slots: dict[str, tuple[str, str, str]] = {}
@@ -1442,7 +1358,6 @@ def create_app_shortcuts(desktop: bool = True, start_menu: bool = True) -> dict[
     created = _create_shortcut(slots)
     _record_integration({f"{slot}_path": path for slot, path in created.items()})
     return created
-
 
 def remove_app_shortcuts() -> list[str]:
     removed = []
@@ -1456,9 +1371,8 @@ def remove_app_shortcuts() -> list[str]:
                 continue
     return removed
 
-
 def set_autostart(enabled: bool) -> str | None:
-    """Create or remove the Windows Startup shortcut for the backend."""
+
     if enabled:
         target, arguments = _autostart_target()
         created = _create_shortcut({"startup": ("Startup", target, arguments)})
@@ -1475,13 +1389,11 @@ def set_autostart(enabled: bool) -> str | None:
         raise RuntimeError(f"Could not remove autostart shortcut: {error}") from error
     return str(path)
 
-
 def _protocol_command() -> str:
     return f'"{VENV_PYTHONW}" "{CONTROL_SCRIPT}" app --uri "%1"'
 
-
 def register_protocol() -> str:
-    """Register adeck:// so the app window can be started from a link."""
+
     if os.name != "nt":
         raise RuntimeError("The adeck:// handler is only supported on Windows")
     import winreg
@@ -1499,7 +1411,6 @@ def register_protocol() -> str:
     _record_integration({"protocol_command": command})
     return command
 
-
 def protocol_registered() -> bool:
     if os.name != "nt":
         return False
@@ -1513,7 +1424,6 @@ def protocol_registered() -> bool:
     except OSError:
         return False
     return str(CONTROL_SCRIPT).casefold() in str(value).casefold()
-
 
 def integration_state() -> dict:
     desktop = _existing_shortcut("desktop")
@@ -1531,7 +1441,6 @@ def integration_state() -> dict:
         "shortcuts_supported": os.name == "nt",
     }
 
-
 def _registry_string(root, path: str, name: str | None = None) -> str:
     try:
         import winreg
@@ -1540,7 +1449,6 @@ def _registry_string(root, path: str, name: str | None = None) -> str:
             return str(winreg.QueryValueEx(key, name)[0])
     except OSError:
         return ""
-
 
 def _executable_from_command(command: str) -> Path | None:
     text = (command or "").strip()
@@ -1553,7 +1461,7 @@ def _executable_from_command(command: str) -> Path | None:
     expanded = os.path.expandvars(text)
     if Path(expanded).is_file():
         return Path(expanded)
-    # Unquoted registry commands may still contain spaces in the program path.
+
     parts = expanded.split(" ")
     for count in range(1, len(parts)):
         candidate = Path(" ".join(parts[:count]))
@@ -1561,9 +1469,8 @@ def _executable_from_command(command: str) -> Path | None:
             return candidate
     return None
 
-
 def find_app_browser() -> Path | None:
-    """A Chromium-family browser that supports --app windows."""
+
     if os.name != "nt":
         return None
     import winreg
@@ -1589,9 +1496,8 @@ def find_app_browser() -> Path | None:
                 return executable
     return None
 
-
 def open_app_window(url: str = WEB_URL) -> bool:
-    """Open ADeck in a standalone app window; fall back to the default browser."""
+
     browser = find_app_browser()
     if browser is not None:
         try:
@@ -1606,14 +1512,12 @@ def open_app_window(url: str = WEB_URL) -> bool:
     webbrowser.open(url)
     return False
 
-
 def cmd_app(debug: bool = False) -> int:
-    """Desktop entry point: make sure the backend is up, then show the app window."""
+
     started = cmd_start(open_browser=False, debug=debug)
-    # Open the window either way: when startup failed the UI explains the state.
+
     open_app_window()
     return started
-
 
 def cmd_shortcuts(debug: bool = False, remove: bool = False) -> int:
     print("ADeck Desktop Shortcuts")
@@ -1639,7 +1543,6 @@ def cmd_shortcuts(debug: bool = False, remove: bool = False) -> int:
         print(f"Shortcut update failed: {error}")
         return 1
 
-
 def cmd_autostart(enable: bool, debug: bool = False) -> int:
     print("ADeck Autostart")
     print("=" * 40)
@@ -1658,7 +1561,6 @@ def cmd_autostart(enable: bool, debug: bool = False) -> int:
         print(f"Autostart update failed: {error}")
         return 1
 
-
 def cmd_protocol(debug: bool = False) -> int:
     print("ADeck URL Handler")
     print("=" * 40)
@@ -1672,9 +1574,8 @@ def cmd_protocol(debug: bool = False) -> int:
         print(f"Could not register {URL_SCHEME}://: {error}")
         return 1
 
-
 def cmd_integrate(debug: bool = False) -> int:
-    """Everything needed to launch ADeck like an installed desktop app."""
+
     print("ADeck Desktop Integration")
     print("=" * 40)
     failures = 0
@@ -1688,7 +1589,6 @@ def cmd_integrate(debug: bool = False) -> int:
     print(f"Autostart:         {'yes' if state['autostart'] else 'no'}")
     print(f"adeck:// handler:  {'yes' if state['protocol_handler'] else 'no'}")
     return 1 if failures else 0
-
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="ADeck control helper")
@@ -1721,7 +1621,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--uri", default="", help="ignored; accepts the adeck:// argument")
     return parser.parse_args(argv)
 
-
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     debug = debug_enabled(args.debug)
@@ -1749,7 +1648,6 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         print("\nCancelled.")
         return 130
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

@@ -1,14 +1,12 @@
-/* ADeck service worker: makes the app installable and lets the installed
-   window open even while the local backend is stopped. Backend state
-   (/api/*) is never cached. */
-
-// Bump when the cached shell files change so old copies are dropped.
-const CACHE = "adeck-shell-4";
+const CACHE = "adeck-shell-5";
 const SHELL = [
   "/",
   "/index.html",
+  "/theme.css",
   "/style.css",
-  "/script.js",
+  "/core.js",
+  "/ui.js",
+  "/system.js",
   "/manifest.webmanifest",
   "/icon-192.png",
   "/icon-512.png",
@@ -24,7 +22,7 @@ self.addEventListener("install", (event) => {
             const response = await fetch(new Request(url, { cache: "reload" }));
             if (response && response.ok) await cache.put(url, response);
           } catch (_) {
-            /* a missing asset must not block installation */
+
           }
         })
       );
@@ -55,7 +53,7 @@ self.addEventListener("fetch", (event) => {
 
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
-  // Live service state must always come from the backend, never from cache.
+
   if (url.pathname.startsWith("/api/")) return;
 
   event.respondWith(

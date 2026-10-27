@@ -1,4 +1,3 @@
-# Python
 .venv/
 __pycache__/
 *.py[cod]
@@ -9,13 +8,9 @@ __pycache__/
 .eggs/
 dist/
 build/
-
-# ADeck generated / runtime
 .build/
 .tools/
 *.log
-
-# OS / editor
 .DS_Store
 Thumbs.db
 desktop.ini
@@ -23,7 +18,5 @@ desktop.ini
 .idea/
 *.swp
 *~
-
-# Local secrets (should not be in repo)
 .env
 .env.*

@@ -1,5 +1,3 @@
-"""Install and verify ADeck firmware on an Arduino UNO R4 WiFi."""
-
 from __future__ import annotations
 
 import argparse
@@ -21,8 +19,8 @@ from typing import Any, Iterable
 
 import serial
 
-
-BASE_DIR = Path(__file__).resolve().parent
+PY_DIR = Path(__file__).resolve().parent
+BASE_DIR = PY_DIR.parent
 SKETCH_DIR = BASE_DIR / "firmware" / "ADeck"
 BUILD_DIR = BASE_DIR / ".build" / "ADeck"
 TOOLS_DIR = BASE_DIR / ".tools"
@@ -41,10 +39,8 @@ IDENTITY_PATH = (
     Path(os.environ.get("LOCALAPPDATA", Path.home())) / "ADeck" / "board.json"
 )
 
-
 class InstallError(RuntimeError):
     pass
-
 
 class CliError(InstallError):
     def __init__(self, command: Iterable[object], result: subprocess.CompletedProcess[str]):
@@ -58,7 +54,6 @@ class CliError(InstallError):
         )
         self.result = result
 
-
 @dataclass(frozen=True)
 class PortInfo:
     port: str
@@ -69,15 +64,12 @@ class PortInfo:
     pid: str | None
     protocol: str | None
 
-
 def stage(name: str) -> None:
     print(f"\n==> {name}", flush=True)
-
 
 def verbose_enabled() -> bool:
     value = os.environ.get("ADECK_DEBUG", "").strip().lower()
     return value in {"1", "true", "yes", "on"}
-
 
 def quiet_enabled() -> bool:
     if verbose_enabled():
@@ -85,17 +77,14 @@ def quiet_enabled() -> bool:
     value = os.environ.get("ADECK_QUIET", "").strip().lower()
     return value in {"1", "true", "yes", "on"}
 
-
 def noninteractive() -> bool:
-    """True when no one can answer a prompt. Windows reports NUL as a TTY, so
-    background callers set ADECK_NONINTERACTIVE explicitly."""
+
     if os.environ.get("ADECK_NONINTERACTIVE", "").strip().lower() in {"1", "true", "yes", "on"}:
         return True
     try:
         return not sys.stdin.isatty()
     except (AttributeError, ValueError, OSError):
         return True
-
 
 def run_process(
     command: list[object],
@@ -124,13 +113,11 @@ def run_process(
         raise CliError(command, result)
     return result
 
-
 def parse_json_output(result: subprocess.CompletedProcess[str], label: str) -> Any:
     try:
         return json.loads(result.stdout)
     except json.JSONDecodeError as error:
         raise InstallError(f"{label} did not return valid JSON: {error}") from error
-
 
 def find_value(value: Any, keys: set[str]) -> str | None:
     if isinstance(value, dict):
@@ -148,7 +135,6 @@ def find_value(value: Any, keys: set[str]) -> str | None:
                 return found
     return None
 
-
 def validate_cli(path: Path) -> str:
     if not path.is_file():
         raise InstallError(f"Arduino CLI is missing: {path}")
@@ -159,7 +145,6 @@ def validate_cli(path: Path) -> str:
     if not version or (application and application.casefold() != "arduino-cli"):
         raise InstallError(f"Unexpected Arduino CLI version response from {path}")
     return version
-
 
 def download_bundled_cli() -> tuple[Path, str]:
     TOOLS_DIR.mkdir(parents=True, exist_ok=True)
@@ -203,7 +188,6 @@ def download_bundled_cli() -> tuple[Path, str]:
     finally:
         shutil.rmtree(install_dir, ignore_errors=True)
 
-
 def resolve_cli() -> Path:
     try:
         version = validate_cli(BUNDLED_CLI)
@@ -233,7 +217,6 @@ def resolve_cli() -> Path:
             f"Could not prepare Arduino CLI. {repair_error}"
         ) from repair_error
 
-
 def collect_values(value: Any, key_name: str) -> set[str]:
     found: set[str] = set()
     if isinstance(value, dict):
@@ -246,7 +229,6 @@ def collect_values(value: Any, key_name: str) -> set[str]:
         for item in value:
             found.update(collect_values(item, key_name))
     return found
-
 
 def prepare_dependencies(cli: Path) -> None:
     core_payload = parse_json_output(
@@ -279,7 +261,6 @@ def prepare_dependencies(cli: Path) -> None:
         else:
             print(f"Library already installed: {library}", flush=True)
 
-
 def normalize_usb_id(value: object) -> str | None:
     if value in (None, ""):
         return None
@@ -287,7 +268,6 @@ def normalize_usb_id(value: object) -> str | None:
     if text.startswith("0x"):
         text = text[2:]
     return text.zfill(4)
-
 
 def property_value(properties: Any, *names: str) -> str | None:
     wanted = {name.casefold() for name in names}
@@ -304,7 +284,6 @@ def property_value(properties: Any, *names: str) -> str | None:
                 return str(item["value"])
     return None
 
-
 def board_entries(payload: Any) -> list[dict[str, Any]]:
     if isinstance(payload, dict) and isinstance(payload.get("detected_ports"), list):
         return [item for item in payload["detected_ports"] if isinstance(item, dict)]
@@ -319,7 +298,6 @@ def board_entries(payload: Any) -> list[dict[str, Any]]:
             for item in payload.values():
                 found.extend(board_entries(item))
     return found
-
 
 def list_ports(cli: Path) -> list[PortInfo]:
     payload = parse_json_output(
@@ -366,7 +344,6 @@ def list_ports(cli: Path) -> list[PortInfo]:
             )
     return ports
 
-
 def detect_target_board(cli: Path) -> PortInfo:
     matches = [item for item in list_ports(cli) if item.fqbn == TARGET_FQBN]
     by_port = {item.port.upper(): item for item in matches}
@@ -394,7 +371,6 @@ def detect_target_board(cli: Path) -> PortInfo:
     )
     return board
 
-
 def health_is_up() -> bool:
     try:
         with urllib.request.urlopen(HEALTH_URL, timeout=0.7) as response:
@@ -404,9 +380,8 @@ def health_is_up() -> bool:
     except (OSError, urllib.error.URLError):
         return False
 
-
 def stop_runtime() -> None:
-    deck = BASE_DIR / "deck.py"
+    deck = PY_DIR / "deck.py"
     if not deck.is_file():
         raise InstallError(f"Runtime entry point is missing: {deck}")
     result = run_process([sys.executable, deck, "--stop"], timeout=20, check=False)
@@ -425,7 +400,6 @@ def stop_runtime() -> None:
     raise InstallError(
         "ADeck runtime is still responding after shutdown; firmware upload was cancelled."
     )
-
 
 def wait_for_port_release(port: str) -> None:
     deadline = time.monotonic() + 12
@@ -453,7 +427,6 @@ def wait_for_port_release(port: str) -> None:
         f"Close Serial Monitor or other serial programs. Last error: {last_error}"
     )
 
-
 def compile_firmware(cli: Path) -> None:
     sketch = SKETCH_DIR / "ADeck.ino"
     if not sketch.is_file():
@@ -472,7 +445,6 @@ def compile_firmware(cli: Path) -> None:
         ]
     )
 
-
 def upload_once(cli: Path, port: str) -> None:
     run_process(
         [
@@ -489,7 +461,6 @@ def upload_once(cli: Path, port: str) -> None:
         ]
     )
 
-
 def identity_score(candidate: PortInfo, original: PortInfo) -> int:
     score = 0
     if (
@@ -505,7 +476,6 @@ def identity_score(candidate: PortInfo, original: PortInfo) -> int:
     if candidate.fqbn == TARGET_FQBN:
         score += 45
     return score
-
 
 def matching_port(
     ports: list[PortInfo],
@@ -532,7 +502,6 @@ def matching_port(
         return candidate
     return None
 
-
 def wait_for_matching_port(
     cli: Path,
     original: PortInfo,
@@ -553,7 +522,6 @@ def wait_for_matching_port(
         time.sleep(0.6)
     return None
 
-
 def touch_1200_bps(port: str) -> None:
     print(f"Requesting bootloader mode on {port}...", flush=True)
     connection = serial.Serial()
@@ -569,7 +537,6 @@ def touch_1200_bps(port: str) -> None:
     finally:
         if connection.is_open:
             connection.close()
-
 
 def upload_with_recovery(cli: Path, board: PortInfo) -> str:
     current_port = board.port
@@ -643,7 +610,6 @@ def upload_with_recovery(cli: Path, board: PortInfo) -> str:
             f"{error}"
         ) from error
 
-
 def ping_firmware(port: str) -> bool:
     connection = serial.Serial()
     connection.port = port
@@ -667,7 +633,6 @@ def ping_firmware(port: str) -> bool:
     finally:
         if connection.is_open:
             connection.close()
-
 
 def verify_firmware(cli: Path, board: PortInfo, upload_port: str) -> PortInfo:
     deadline = time.monotonic() + 30
@@ -699,7 +664,6 @@ def verify_firmware(cli: Path, board: PortInfo, upload_port: str) -> PortInfo:
         f"30 seconds ({detail}). Installation cannot continue."
     )
 
-
 def save_identity(board: PortInfo) -> None:
     IDENTITY_PATH.parent.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -714,7 +678,6 @@ def save_identity(board: PortInfo) -> None:
     os.replace(temp_path, IDENTITY_PATH)
     print(f"Saved board identity to {IDENTITY_PATH}", flush=True)
 
-
 def backend_reports_connected() -> bool:
     try:
         with urllib.request.urlopen(HEALTH_URL, timeout=0.7) as response:
@@ -727,7 +690,6 @@ def backend_reports_connected() -> bool:
         )
     except (OSError, urllib.error.URLError, ValueError, TypeError):
         return False
-
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -744,7 +706,6 @@ def parse_args() -> argparse.Namespace:
         help="skip compile/upload when the board already answers ADECK_PONG",
     )
     return parser.parse_args()
-
 
 def main() -> int:
     args = parse_args()
@@ -796,7 +757,6 @@ def main() -> int:
         message = "Installation cancelled." if isinstance(error, KeyboardInterrupt) else str(error)
         print(f"\nFirmware installation failed: {message}", file=sys.stderr, flush=True)
         return 1
-
 
 if __name__ == "__main__":
     raise SystemExit(main())

@@ -20,29 +20,29 @@ const uint8_t CONFIG_VERSION = 3;
 const uint8_t PROTOCOL_VERSION = 2;
 const uint8_t TOTAL_APPS = 6;
 const uint8_t LABEL_SIZE = 11;
-// Key cell on the TFT (touch box == draw box).
+
 const uint8_t APP_W = 90;
 const uint8_t APP_H = 90;
 const uint8_t ICON_SIZE = 32;
-// Logo size on TFT — must be a multiple of ICON_BAND or the last blit paints junk.
-// Leave room for gap + label. Text size stays 1.
+
+
 const uint8_t ICON_DRAW = 72;
-const uint8_t ICON_BITMAP = ICON_DRAW; // draw size on panel (scaled up from 32×32 source)
+const uint8_t ICON_BITMAP = ICON_DRAW;
 const uint8_t ICON_INSET = 0;
-const uint8_t ICON_BAND = 4;           // blit a few rows at a time — full bitmap won't fit RAM
-const uint8_t ICON_GAP = 10;           // text sits a bit lower under the logo
-const uint8_t TEXT_H = 8;              // built-in font height at size 1
-const unsigned long ICON_STREAM_IDLE_MS = 120;  // wait for stream to settle before redraw
+const uint8_t ICON_BAND = 4;
+const uint8_t ICON_GAP = 10;
+const uint8_t TEXT_H = 8;
+const unsigned long ICON_STREAM_IDLE_MS = 120;
 const unsigned long ICON_RECV_TIMEOUT_MS = 2000;
 
-// Runtime canvas size after setRotation (landscape 320×240, portrait 240×320).
+
 int16_t screenW = 320;
 int16_t screenH = 240;
-uint8_t displayRotation = 1;  // matches historical setRotation(1) landscape
+uint8_t displayRotation = 1;
 uint8_t gridCols = 3;
 uint8_t gridRows = 2;
 
-// Grid cell — draw box == touch box (no second geometry to drift)
+
 const int KEY_W = APP_W;
 const int KEY_H = APP_H;
 
@@ -50,7 +50,7 @@ const int PRESS_RADIUS = 12;
 const uint16_t SERIAL_LINE_MAX = 180;
 const uint16_t RECORD_SLOT_0 = 0;
 const unsigned long CONFIG_TIMEOUT_MS = 5000;
-const unsigned long PRESS_VIEW_MS = 800;  // press flash — long enough to notice, not sluggish
+const unsigned long PRESS_VIEW_MS = 800;
 const unsigned long PRESS_DEBOUNCE_MS = 300;
 const unsigned long RELEASE_DEBOUNCE_MS = 70;
 
@@ -58,7 +58,7 @@ TouchScreen ts(XP, YP, XM, YM, 300);
 Arduino_DataBus *bus = new Arduino_SWPAR8(A2, A3, A1, A0, 8, 9, 2, 3, 4, 5, 6, 7);
 Arduino_GFX *gfx = new Arduino_ILI9341(bus, A4, 0, false);
 
-// Theme palette indices — host owns names/CSS; board only paints these colours.
+
 const uint8_t THEME_BACKGROUND = 0;
 const uint8_t THEME_TEXT = 1;
 const uint8_t THEME_TEXT_MUTED = 2;
@@ -70,20 +70,20 @@ const uint8_t THEME_COUNT = 7;
 
 const uint8_t BG_EFFECT_NONE = 0;
 const uint8_t BG_EFFECT_STARS = 1;
-// Keep RAM light — gutters are narrow, so every star must stay visible there.
-const uint8_t STAR_COUNT = 16;
-const uint8_t STAR_SIZE = 2;           // 2×2 dots read on the TFT; 1px is invisible
-const uint8_t STAR_MIN_SEP = 34;       // keep spread — no clumps
-const unsigned long STAR_FRAME_MS = 55;  // calm drift, a touch quicker
 
-const uint8_t SELECTED_MIX = 100;  // blend slot colour toward theme when selected
+const uint8_t STAR_COUNT = 16;
+const uint8_t STAR_SIZE = 2;
+const uint8_t STAR_MIN_SEP = 34;
+const unsigned long STAR_FRAME_MS = 55;
+
+const uint8_t SELECTED_MIX = 100;
 
 struct StarDot {
   int16_t x;
   int16_t y;
   int8_t dx;
   int8_t dy;
-  uint8_t shade;  // 0 bright … 2 dim
+  uint8_t shade;
 };
 
 struct SlotConfig {
@@ -120,7 +120,7 @@ DeviceConfig config;
 DeviceConfig stagedConfig;
 uint32_t stagedRgb[TOTAL_APPS];
 uint8_t stagedSlots = 0;
-// Theme stages separately from slots — a failed theme push shouldn't wipe keys.
+
 uint32_t stagedThemeRgb[THEME_COUNT];
 uint8_t stagedThemeMask = 0;
 bool receivingTheme = false;
@@ -133,7 +133,7 @@ unsigned long nextStarFrame = 0;
 uint32_t activeGeneration = 0;
 int8_t activeRecord = -1;
 uint16_t slotIcons[TOTAL_APPS][ICON_SIZE * ICON_SIZE];
-uint16_t iconBand[ICON_BITMAP * ICON_BAND];  // reusable blit band
+uint16_t iconBand[ICON_BITMAP * ICON_BAND];
 bool slotHasIcon[TOTAL_APPS];
 String lastSyncId;
 int8_t iconRecvIndex = -1;
@@ -148,7 +148,7 @@ bool serialOverflow = false;
 unsigned long transactionLastActivity = 0;
 
 bool displayReady = false;
-// Redraws run from the main loop only — serial just sets flags (keeps icon stream alive).
+
 bool drawing = false;
 bool fullRedrawPending = false;
 uint8_t keyRedrawPending = 0;
@@ -221,17 +221,16 @@ void loadDefaults(DeviceConfig &target) {
   const uint16_t colors[TOTAL_APPS] = {
     0x07E0, 0xF800, 0x780F, 0x03E0, 0x001F, 0xFFE0
   };
-  // ADeck Classic. only ever paints a board that has never been configured and
-  // has no host attached - the moment the host says hello it sends the real
-  // theme, so these just have to look right on their own for a minute
+
+
   const uint16_t theme[THEME_COUNT] = {
-    0x0000,  // background  #000000
-    0xFFFF,  // text        #ffffff
-    0x39E7,  // textMuted   #3a3d3a
-    0xC638,  // accent      #c5c5c3
-    0x2965,  // accent2     #2c2c28
-    0xFFFF,  // selected    #ffffff
-    0x10A2,  // pressed     #141412
+    0x0000,
+    0xFFFF,
+    0x39E7,
+    0xC638,
+    0x2965,
+    0xFFFF,
+    0x10A2,
   };
 
   memset(&target, 0, sizeof(target));
@@ -360,13 +359,12 @@ uint16_t textColorFor(uint16_t color) {
   return brightness > 145 ? 0x0000 : 0xFFFF;
 }
 
-// Rebuild key grid for the active orientation (3×2 landscape / 2×3 portrait).
-// ILI9341 setRotation sizes: 0+2 = 240×320 portrait, 1+3 = 320×240 landscape.
+
 void rebuildSlotLayout() {
   if (screenH > screenW) {
     gridCols = 2;
     gridRows = 3;
-    // Even gutters: 25 | 90 | 10 | 90 | 25  and  15 | 90 | 10 | 90 | 10 | 90 | 15
+
     const int xs[2] = {25, 125};
     const int ys[3] = {15, 115, 215};
     for (uint8_t i = 0; i < TOTAL_APPS; i++) {
@@ -376,7 +374,7 @@ void rebuildSlotLayout() {
   } else {
     gridCols = 3;
     gridRows = 2;
-    // Historical landscape spacing.
+
     const int xs[3] = {15, 115, 215};
     const int ys[2] = {20, 130};
     for (uint8_t i = 0; i < TOTAL_APPS; i++) {
@@ -407,21 +405,21 @@ void applyDisplayRotation(uint8_t rotation) {
 }
 
 void mapTouchToScreen(const TSPoint &point, int &touchX, int &touchY) {
-  // Keep rotation 1 identical to the original board mapping.
+
   switch (displayRotation) {
-    case 0:  // portrait 90°
+    case 0:
       touchX = map(point.x, TS_MINX, TS_MAXX, 0, screenW);
       touchY = map(point.y, TS_MINY, TS_MAXY, 0, screenH);
       break;
-    case 2:  // portrait 180° — invert both axes vs rotation 0
+    case 2:
       touchX = map(point.x, TS_MINX, TS_MAXX, screenW, 0);
       touchY = map(point.y, TS_MINY, TS_MAXY, screenH, 0);
       break;
-    case 3:  // landscape 270° — invert both axes vs rotation 1
+    case 3:
       touchX = map(point.y, TS_MINY, TS_MAXY, 0, screenW);
       touchY = map(point.x, TS_MINX, TS_MAXX, 0, screenH);
       break;
-    case 1:  // landscape 0° (historical default)
+    case 1:
     default:
       touchX = map(point.y, TS_MINY, TS_MAXY, screenW, 0);
       touchY = map(point.x, TS_MINX, TS_MAXX, screenH, 0);
@@ -429,7 +427,7 @@ void mapTouchToScreen(const TSPoint &point, int &touchX, int &touchY) {
   }
 }
 
-// layout helpers
+
 int cardX(uint8_t index) {
   return slotX[index];
 }
@@ -451,7 +449,7 @@ uint16_t mixColor(uint16_t from, uint16_t to, uint8_t amount) {
   return (red << 11) | (green << 5) | blue;
 }
 
-const uint8_t PRESS_TINT = 110;  // blend key colour toward theme when pressed
+const uint8_t PRESS_TINT = 110;
 
 void drawKeyLabel(const char *text, int centerX, int y, uint8_t size, uint16_t color) {
   const int width = strlen(text) * 6 * size;
@@ -461,7 +459,7 @@ void drawKeyLabel(const char *text, int centerX, int y, uint8_t size, uint16_t c
   gfx->print(text);
 }
 
-// Scale 32×32 source → ICON_BITMAP with nearest-neighbour (one RAM band at a time).
+
 void scaleIconBand(uint8_t index, uint8_t firstRow, uint8_t bandRows) {
   const uint16_t *src = slotIcons[index];
   for (uint8_t row = 0; row < bandRows; row++) {
@@ -474,7 +472,7 @@ void scaleIconBand(uint8_t index, uint8_t firstRow, uint8_t bandRows) {
   }
 }
 
-// Paint icon in bands; drain serial between bands so the 256-byte buffer doesn't overflow.
+
 void drawKeyIcon(uint8_t index, int x, int y) {
   x += ICON_INSET;
   y += ICON_INSET;
@@ -494,7 +492,7 @@ void drawKey(uint8_t index) {
   const int y = cardY(index);
   const String label = String(slot.label);
 
-  // Wipe the key cell first — stops ghost labels showing through transparent icon pixels.
+
   gfx->fillRect(x, y, KEY_W, KEY_H, config.theme.values[THEME_BACKGROUND]);
 
   if (!slot.label[0]) {
@@ -506,7 +504,7 @@ void drawKey(uint8_t index) {
   }
 
   if (!slotHasIcon[index]) {
-    // Label-only until an icon arrives from the host. Same size as under-icon names.
+
     const uint16_t accent = mixColor(
       slot.color, config.theme.values[THEME_SELECTED], SELECTED_MIX
     );
@@ -516,7 +514,7 @@ void drawKey(uint8_t index) {
     return;
   }
 
-  // Icons stay fixed size/position; labels are always size 1 so every key matches.
+
   const int groupTop = y + (KEY_H - (ICON_DRAW + ICON_GAP + TEXT_H)) / 2;
   drawKeyIcon(index, x + (KEY_W - ICON_DRAW) / 2, groupTop);
   drawKeyLabel(
@@ -541,7 +539,7 @@ bool pointInKeyCell(int x, int y) {
   return false;
 }
 
-// True when any pixel of a STAR_SIZE block would sit on a key cell.
+
 bool starHitsKey(int x, int y) {
   for (uint8_t dy = 0; dy < STAR_SIZE; dy++) {
     for (uint8_t dx = 0; dx < STAR_SIZE; dx++) {
@@ -552,12 +550,12 @@ bool starHitsKey(int x, int y) {
 }
 
 uint16_t starShadeColor(uint8_t shade) {
-  if (shade == 0) return 0xFFFF;  // white
-  if (shade == 1) return 0xDEFB;  // near-white
-  return 0xC618;                 // light grey — still readable on dark mist
+  if (shade == 0) return 0xFFFF;
+  if (shade == 1) return 0xDEFB;
+  return 0xC618;
 }
 
-// Mostly slow cardinal drift; light diagonals — reads as space, not buzzing.
+
 void assignStarDrift(StarDot &star) {
   static const int8_t kDx[6] = {1, -1, 0, 0, 1, -1};
   static const int8_t kDy[6] = {0, 0, 1, -1, 1, -1};
@@ -630,7 +628,7 @@ void pickGutterPoint(uint8_t zone, int16_t &x, int16_t &y) {
   if (y > screenH - STAR_SIZE) y = screenH - STAR_SIZE;
 }
 
-// Place in gutters only. forcedZone >= 0 pins the strip for even coverage.
+
 void placeStarInGutter(StarDot &star, int8_t ignoreIndex, int8_t forcedZone) {
   const uint8_t zones = starGutterZoneCount();
   for (uint8_t attempt = 0; attempt < 40; attempt++) {
@@ -646,7 +644,7 @@ void placeStarInGutter(StarDot &star, int8_t ignoreIndex, int8_t forcedZone) {
       return;
     }
   }
-  // Last resort: zone only, ignore spacing once.
+
   int16_t x = 0;
   int16_t y = 0;
   pickGutterPoint(forcedZone >= 0 ? static_cast<uint8_t>(forcedZone) : 0, x, y);
@@ -658,7 +656,7 @@ void seedStars() {
   randomSeed(micros() ^ (analogRead(A5) << 16) ^ millis());
   const uint8_t zones = starGutterZoneCount();
   for (uint8_t i = 0; i < STAR_COUNT; i++) {
-    // Round-robin gutters so the field isn't empty on one side / crowded on another.
+
     placeStarInGutter(
       stars[i], static_cast<int8_t>(i), static_cast<int8_t>(i % zones)
     );
@@ -700,8 +698,8 @@ void serviceStars(unsigned long now) {
 
   const uint16_t bg = config.theme.values[THEME_BACKGROUND];
   for (uint8_t i = 0; i < STAR_COUNT; i++) {
-    // Dimmer stars drift slower (parallax depth) — leave them painted.
-    const uint8_t period = static_cast<uint8_t>(1 + stars[i].shade);  // 1..3
+
+    const uint8_t period = static_cast<uint8_t>(1 + stars[i].shade);
     if ((starTick % period) != 0) continue;
 
     StarDot &star = stars[i];
@@ -710,7 +708,7 @@ void serviceStars(unsigned long now) {
     int16_t nx = static_cast<int16_t>(star.x + star.dx);
     int16_t ny = static_cast<int16_t>(star.y + star.dy);
 
-    // Near / past the bezel: leave the edge, re-enter in a sparse free gutter.
+
     if (
       nx < 0 || nx > screenW - STAR_SIZE ||
       ny < 0 || ny > screenH - STAR_SIZE
@@ -722,7 +720,7 @@ void serviceStars(unsigned long now) {
       continue;
     }
 
-    // Keys: bounce and keep floating — never sit invisible on top of a key.
+
     if (starHitsKey(nx, ny)) {
       const int16_t tryX = static_cast<int16_t>(star.x - star.dx);
       const int16_t tryY2 = static_cast<int16_t>(star.y - star.dy);
@@ -758,7 +756,7 @@ void serviceStars(unsigned long now) {
       }
     }
 
-    // Soft separation — steer away if another star is crowding this one.
+
     if (starCoordsTooClose(nx, ny, static_cast<int8_t>(i))) {
       int16_t pushX = 0;
       int16_t pushY = 0;
@@ -789,12 +787,12 @@ void serviceStars(unsigned long now) {
       }
     }
 
-    // Rare soft turn while floating.
+
     if (random(520) == 0) {
       nudgeStarDrift(star);
     }
 
-    // Unstick: if this frame couldn't step, try every cardinal; still stuck → re-place.
+
     if (nx == ox && ny == oy) {
       static const int8_t kTryDx[4] = {1, -1, 0, 0};
       static const int8_t kTryDy[4] = {0, 0, 1, -1};
@@ -845,7 +843,7 @@ void requestKeyRedraw(uint8_t index) {
   keyRedrawPending |= static_cast<uint8_t>(1 << index);
 }
 
-// Single place keys redraw. Incoming serial only sets flags — never re-enters mid-paint.
+
 void serviceRedraw(unsigned long now) {
   if (!displayReady || drawing || pressedVisible) return;
   if (!fullRedrawPending && !keyRedrawPending) return;
@@ -855,7 +853,7 @@ void serviceRedraw(unsigned long now) {
     keyRedrawPending = 0;
     drawing = true;
     gfx->fillScreen(config.theme.values[THEME_BACKGROUND]);
-    // Stars sit in the gutters behind keys — paint them before the key cells.
+
     paintAllStars();
     for (uint8_t i = 0; i < TOTAL_APPS; i++) {
       drawKey(i);
@@ -865,7 +863,7 @@ void serviceRedraw(unsigned long now) {
     return;
   }
 
-  if (iconStreamActive(now)) return;  // wait until icon stream goes idle
+  if (iconStreamActive(now)) return;
   const uint8_t pending = keyRedrawPending;
   keyRedrawPending = 0;
   drawing = true;
@@ -903,7 +901,7 @@ void showPressedSlot(uint8_t index) {
   readSerial();
 
   if (slotHasIcon[index]) {
-    // icon and label centred together
+
     const int groupTop = y + (pressH - (ICON_DRAW + 16 + 8 * size)) / 2;
     drawKeyIcon(index, x + (pressW - ICON_DRAW) / 2, groupTop);
     drawKeyLabel(label.c_str(), screenW / 2, groupTop + ICON_DRAW + 16, size, textColor);
@@ -1022,10 +1020,8 @@ void beginConfig(const String &line) {
   if (receivingConfig) {
     sendConfigError(transactionId, "SUPERSEDED");
   }
-  // the theme rides along from the live config rather than being wiped: this
-  // transaction only carries slots, and it has no business forgetting the panel
-  // colours while it does. every slot is rewritten before CFG_END commits, so
-  // nothing stale survives anyway
+
+
   stagedConfig = config;
   memset(stagedRgb, 0, sizeof(stagedRgb));
   stagedSlots = 0;
@@ -1173,7 +1169,7 @@ uint8_t parseBgEffect(const String &name) {
   return BG_EFFECT_NONE;
 }
 
-// Theme uses its own transaction so a failed theme push can't wipe key config.
+
 void beginTheme(const String &line) {
   const int firstTab = line.indexOf('\t');
   const int secondTab = line.indexOf('\t', firstTab + 1);
@@ -1182,7 +1178,7 @@ void beginTheme(const String &line) {
     sendThemeError("-", "BAD_BEGIN");
     return;
   }
-  // Optional 4th field: background effect id (e.g. stars). No further fields.
+
   if (thirdTab >= 0 && line.indexOf('\t', thirdTab + 1) >= 0) {
     sendThemeError("-", "BAD_BEGIN");
     return;
@@ -1205,7 +1201,7 @@ void beginTheme(const String &line) {
   if (receivingConfig) {
     failTransaction(transactionId, "SUPERSEDED");
   }
-  if (iconRecvIndex >= 0) {  // don't interrupt a half-received icon
+  if (iconRecvIndex >= 0) {
     sendThemeError(id, "BUSY");
     return;
   }
@@ -1312,7 +1308,7 @@ void endTheme(const String &line) {
   if (bgEffect == BG_EFFECT_STARS) {
     seedStars();
   }
-  // Drop icons — they were blended for the old background; host will re-send.
+
   pressedVisible = false;
   memset(slotHasIcon, 0, sizeof(slotHasIcon));
   iconRecvIndex = -1;
@@ -1324,7 +1320,7 @@ void endTheme(const String &line) {
 }
 
 void receiveRotate(const String &line) {
-  // CFG_ROTATE\t{txid}\t{0-3}
+
   const int firstTab = line.indexOf('\t');
   const int secondTab = line.indexOf('\t', firstTab + 1);
   if (firstTab < 0 || secondTab < 0 || line.indexOf('\t', secondTab + 1) >= 0) {
@@ -1392,8 +1388,7 @@ void beginIcon(const String &line) {
     index = static_cast<uint8_t>(indexText.charAt(0) - '0');
   }
 
-  // every refusal is reported: a silently ignored icon is a key that stays
-  // empty on the panel with nothing anywhere to say why
+
   if (receivingConfig || receivingTheme) {
     sendIconError(id, index, "BUSY");
     return;
@@ -1428,7 +1423,7 @@ void receiveIconRow(const String &line) {
   const int row = line.substring(thirdTab + 1, fourthTab).toInt();
   if (row < 0 || row >= ICON_SIZE) return;
 
-  // Parse hex in place — no per-row String alloc (serial can't wait).
+
   const char *hex = line.c_str() + fourthTab + 1;
   if (strlen(hex) != ICON_SIZE * 4) return;
 
@@ -1464,8 +1459,8 @@ void endIcon(const String &line) {
   iconRecvMask = 0;
 
   if (mask != 0xFFFFFFFFUL) {
-    // rows were dropped on the way in. tell the host instead of leaving the
-    // key without an icon and no way for anyone to find out why
+
+
     sendIconError(id, index, "INCOMPLETE");
     return;
   }
@@ -1604,8 +1599,7 @@ void setup() {
   displayReady = gfx->begin();
   applyDisplayRotation(1);
 
-  // config first: the panel's first paint is already its theme's background,
-  // rather than black followed by a visible flash into the real colour
+
   loadConfig();
   requestFullRedraw();
   serviceRedraw(millis());
@@ -1637,7 +1631,7 @@ void loop() {
   }
 
   if (iconRecvIndex >= 0 && timeReached(now, iconRecvAt + ICON_RECV_TIMEOUT_MS)) {
-    // the host stopped part way through an icon: release the slot and say so
+
     const uint8_t index = static_cast<uint8_t>(iconRecvIndex);
     iconRecvIndex = -1;
     iconRecvMask = 0;
