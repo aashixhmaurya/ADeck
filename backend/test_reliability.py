@@ -89,6 +89,10 @@ class FakeSerial:
                     self.replies.append(f"CFG_THEME_OK\t{parts[1]}\n".encode("ascii"))
             elif parts[0] == "CFG_ROTATE" and len(parts) > 1:
                 self.replies.append(f"CFG_ROTATE_OK\t{parts[1]}\n".encode("ascii"))
+            elif parts[0] == "CFG_SLEEP" and len(parts) > 1:
+                self.replies.append(f"CFG_SLEEP_OK\t{parts[1]}\n".encode("ascii"))
+            elif parts[0] == "CFG_SLEEPIMG_END" and len(parts) > 1:
+                self.replies.append(f"CFG_SLEEPIMG_OK\t{parts[1]}\n".encode("ascii"))
             elif parts[0] == "CFG_ICON_END" and len(parts) > 2:
                 self.icon_frames += 1
                 if self.icon_frames <= self.frames_to_drop:
@@ -1102,6 +1106,10 @@ class ReliabilityTests(unittest.TestCase):
             "ADECK_CAPS\\tROTATE",
             "CFG_ROTATE",
             "CFG_ROTATE_OK",
+            "CFG_SLEEP",
+            "CFG_SLEEP_OK",
+            "CFG_SLEEPIMG_BEGIN",
+            "ADECK_CAPS\\tSLEEP",
             "applyDisplayRotation",
             "THEME_BACKGROUND",
             "THEME_TEXT",
@@ -1112,7 +1120,7 @@ class ReliabilityTests(unittest.TestCase):
             self.assertIn(token, firmware, token)
 
         self.assertIn("uint16_t theme[THEME_COUNT];", firmware)
-        self.assertIn("CONFIG_VERSION = 3", firmware)
+        self.assertIn("CONFIG_VERSION = 4", firmware)
 
     def test_web_theme_layer_is_wired_up(self):
         script = web_js()
@@ -1143,6 +1151,11 @@ class ReliabilityTests(unittest.TestCase):
         self.assertIn("OLED", script)
         self.assertIn("appearanceForcesDark", script)
         self.assertIn("rotateBtn", page)
+        self.assertIn("settingSleepMode", page)
+        self.assertIn("SLEEP SCREEN", page)
+        self.assertIn("sleepImagePickBtn", page)
+        self.assertIn("ADD IMAGE", page)
+        self.assertIn("encodeSleepImageFile", script)
         self.assertIn(".theme-card", style)
         self.assertIn(".appearance-preview-stage", style)
         self.assertIn(".theme-tft", style)
@@ -1257,6 +1270,95 @@ class ReliabilityTests(unittest.TestCase):
         joined = b"".join(connection.writes)
         self.assertNotIn(b"CFG_ROTATE", joined)
         self.assertIsNone(device.status()["rotation"])
+
+    def test_sleep_reaches_a_board_that_announced_it(self):
+        normalized = self._theme_config()
+        normalized["settings"] = {"sleepTimeout": 30, "sleepMode": "black"}
+        device = self._icon_device("sleep-on.json")
+        connection = FakeSerial()
+        device._connection = connection
+        device._tft_icons = True
+        device._tft_theme = True
+        device._tft_rotate = True
+        device._tft_sleep = True
+
+        device._sync(normalized, "abc123")
+
+        self.assertIn(deck.sleep_frame(30, "black", "abc123"), connection.writes)
+        self.assertNotIn(b"CFG_SLEEPIMG", b"".join(connection.writes))
+
+    def test_sleep_image_mode_is_sent_during_sync(self):
+        pixels = "07E0" * (128 * 96)
+        normalized = self._theme_config()
+        normalized["settings"] = {
+            "sleepTimeout": 30,
+            "sleepMode": "image",
+            "sleepImage": pixels,
+        }
+        device = self._icon_device("sleep-img-sync.json")
+        connection = FakeSerial()
+        device._connection = connection
+        device._tft_icons = True
+        device._tft_theme = True
+        device._tft_rotate = True
+        device._tft_sleep = True
+
+        device._sync(normalized, "abc123")
+
+        joined = b"".join(connection.writes)
+        self.assertIn(deck.sleep_frame(30, "image", "abc123"), connection.writes)
+        self.assertNotIn(b"CFG_SLEEPIMG", joined)
+
+    def test_sleep_is_skipped_when_board_has_no_caps(self):
+        normalized = self._theme_config()
+        normalized["settings"] = {"sleepTimeout": 30, "sleepMode": "black"}
+        device = self._icon_device("sleep-off.json")
+        connection = FakeSerial()
+        device._connection = connection
+        device._tft_icons = True
+        device._tft_theme = True
+        device._tft_rotate = True
+        device._tft_sleep = False
+
+        device._sync(normalized, "abc123")
+
+        joined = b"".join(connection.writes)
+        self.assertNotIn(b"CFG_SLEEP", joined)
+
+    def test_sleep_image_is_pushed_when_pad_sleeps(self):
+        pixels = "F800" * (128 * 96)
+        normalized = self._theme_config()
+        normalized["settings"] = {
+            "sleepTimeout": 30,
+            "sleepMode": "image",
+            "sleepImage": pixels,
+        }
+        device = self._icon_device("sleep-img.json")
+        connection = FakeSerial()
+        device._connection = connection
+        device._tft_sleep = True
+        device.store.config = normalized
+
+        device._handle_line("SLEEP")
+
+        joined = b"".join(connection.writes)
+        self.assertIn(b"CFG_SLEEPIMG_BEGIN", joined)
+        self.assertIn(b"CFG_SLEEPIMG_ROW", joined)
+        self.assertIn(b"CFG_SLEEPIMG_END", joined)
+        self.assertIn(pixels[:16].encode("ascii"), joined)
+
+    def test_sleep_image_is_skipped_for_black_mode(self):
+        normalized = self._theme_config()
+        normalized["settings"] = {"sleepTimeout": 30, "sleepMode": "black"}
+        device = self._icon_device("sleep-img-off.json")
+        connection = FakeSerial()
+        device._connection = connection
+        device._tft_sleep = True
+        device.store.config = normalized
+
+        device._handle_line("SLEEP")
+
+        self.assertEqual(connection.writes, [])
 
     def test_web_background_colour_layer_is_wired_up(self):
         script = web_js()

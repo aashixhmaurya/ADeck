@@ -102,6 +102,15 @@
   padding: 10px 12px; outline: none; font-size: 16px; font-weight: 800;
 }
 .field input[type="range"] { padding: 0; height: 28px; accent-color: var(--ink); }
+.sleep-preview {
+  width: 160px;
+  height: 120px;
+  border: 1px solid var(--line);
+  background: var(--bg-2);
+  display: block;
+}
+.sleep-preview[hidden],
+#sleepImageField[hidden] { display: none; }
 .field input:focus, .field select:focus, .field textarea:focus {
   background: var(--panel-focus);
   outline: none;

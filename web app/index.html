@@ -325,7 +325,7 @@
       <header class="panel-header">
         <p class="panel-kicker mono muted">PREFERENCES</p>
         <h2 class="panel-title mono">SETTINGS</h2>
-        <p class="panel-lead mono muted">Local preferences. Brightness, sleep, and Wi‑Fi are saved here until the board supports them.</p>
+        <p class="panel-lead mono muted">Local preferences. Sleep and Wi‑Fi are saved here until the board supports them.</p>
       </header>
 
       <form id="settingsForm" class="settings-form" autocomplete="off">
@@ -365,11 +365,6 @@
             <input type="text" id="settingDeviceName" name="deviceName" maxlength="24" placeholder="ADECK-UNO" />
           </label>
           <label class="field">
-            <span class="field-label">BRIGHTNESS <em class="mono muted" id="brightnessVal">80%</em></span>
-            <input type="range" id="settingBrightness" name="brightness" min="10" max="100" step="5" value="80" />
-            <span class="field-hint mono muted">Saved locally for now — TFT brightness comes later</span>
-          </label>
-          <label class="field">
             <span class="field-label">SLEEP TIMEOUT</span>
             <select id="settingSleep" name="sleepTimeout">
               <option value="30">30 seconds</option>
@@ -377,8 +372,23 @@
               <option value="300">5 minutes</option>
               <option value="0">Never</option>
             </select>
-            <span class="field-hint mono muted">Saved locally for now — device sleep comes later</span>
+            <span class="field-hint mono muted">TFT sleeps after this idle time. Touch anywhere to wake.</span>
           </label>
+          <label class="field">
+            <span class="field-label">SLEEP SCREEN</span>
+            <select id="settingSleepMode" name="sleepMode">
+              <option value="black">Black screen</option>
+              <option value="image">Custom image</option>
+            </select>
+            <span class="field-hint mono muted">Black is the default. Custom shows your image on the TFT.</span>
+          </label>
+          <div class="field" id="sleepImageField" hidden>
+            <span class="field-label">SLEEP IMAGE</span>
+            <input type="file" id="settingSleepImage" name="sleepImage" accept="image/png,image/jpeg" hidden />
+            <button type="button" id="sleepImagePickBtn" class="ghost-btn">ADD IMAGE</button>
+            <canvas id="sleepImagePreview" class="sleep-preview" width="160" height="120" hidden aria-hidden="true"></canvas>
+            <span class="field-hint mono muted">PNG or JPG. Needs the local ADeck service when the pad sleeps.</span>
+          </div>
           <label class="field">
             <span class="field-label">DEFAULT PROFILE</span>
             <select id="settingDefaultProfile" name="defaultProfile"></select>

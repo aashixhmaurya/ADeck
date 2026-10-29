@@ -1,4 +1,4 @@
-const CACHE = "adeck-shell-18";
+const CACHE = "adeck-shell-25";
 const SHELL = [
   "/",
   "/index.html",

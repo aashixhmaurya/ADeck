@@ -684,6 +684,73 @@ def rotation_frame(rotation, txid):
     value = normalize_rotation(rotation)
     return f"CFG_ROTATE\t{txid}\t{value}\n".encode("ascii")
 
+SLEEP_TIMEOUTS = frozenset({0, 30, 60, 300})
+SLEEP_W = 128
+SLEEP_H = 96
+SLEEP_CHUNK = 16
+SLEEP_IMAGE_HEX_LEN = SLEEP_W * SLEEP_H * 4
+
+def normalize_sleep_timeout(value):
+    try:
+        seconds = int(value)
+    except (TypeError, ValueError):
+        return 60
+    return seconds if seconds in SLEEP_TIMEOUTS else 60
+
+def normalize_sleep_mode(value):
+    key = str(value or "").strip().lower()
+    return "image" if key == "image" else "black"
+
+def sleep_image_hex(value):
+    text = str(value or "").strip().upper()
+    if len(text) != SLEEP_IMAGE_HEX_LEN:
+        return ""
+    if any(ch not in "0123456789ABCDEF" for ch in text):
+        return ""
+    return text
+
+def active_sleep_timeout(config):
+    if not config:
+        return 60
+    settings = config.get("settings") or {}
+    if not isinstance(settings, dict):
+        return 60
+    return normalize_sleep_timeout(settings.get("sleepTimeout"))
+
+def active_sleep_mode(config):
+    if not config:
+        return "black"
+    settings = config.get("settings") or {}
+    if not isinstance(settings, dict):
+        return "black"
+    mode = normalize_sleep_mode(settings.get("sleepMode"))
+    if mode == "image" and not sleep_image_hex(settings.get("sleepImage")):
+        return "black"
+    return mode
+
+def sleep_frame(seconds, mode, txid):
+    timeout = normalize_sleep_timeout(seconds)
+    flag = 1 if normalize_sleep_mode(mode) == "image" else 0
+    return f"CFG_SLEEP\t{txid}\t{timeout}\t{flag}\n".encode("ascii")
+
+def sleep_image_frame(hex_pixels, txid):
+    payload = sleep_image_hex(hex_pixels)
+    if not payload:
+        return b""
+    lines = [f"CFG_SLEEPIMG_BEGIN\t{txid}\t{SLEEP_W}\t{SLEEP_H}"]
+    row_stride = SLEEP_W * 4
+    for row in range(SLEEP_H):
+        start = row * row_stride
+        row_hex = payload[start : start + row_stride]
+        offset = 0
+        while offset < SLEEP_W:
+            count = SLEEP_W - offset if SLEEP_W - offset < SLEEP_CHUNK else SLEEP_CHUNK
+            chunk = row_hex[offset * 4 : (offset + count) * 4]
+            lines.append(f"CFG_SLEEPIMG_ROW\t{txid}\t{row}\t{offset}\t{chunk}")
+            offset += count
+    lines.append(f"CFG_SLEEPIMG_END\t{txid}")
+    return ("\n".join(lines) + "\n").encode("ascii")
+
 def _crc16_next(crc, value):
     crc ^= value << 8
     for _ in range(8):
@@ -1656,6 +1723,10 @@ _THEME_ATTEMPTS = 2
 _THEME_ACK_TIMEOUT = 1.5
 _ROTATE_ATTEMPTS = 2
 _ROTATE_ACK_TIMEOUT = 1.5
+_SLEEP_ATTEMPTS = 2
+_SLEEP_ACK_TIMEOUT = 1.5
+_SLEEPIMG_ACK_TIMEOUT = 8.0
+_SLEEPIMG_ROW_DELAY = 0.008
 _ICON_EXTRACT_LOCK = threading.Lock()
 _ICON_APIS_READY = False
 _ICON_FILE_SUFFIXES = {".dll", ".exe", ".ico", ".lnk"}

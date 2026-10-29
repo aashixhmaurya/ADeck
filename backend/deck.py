@@ -71,6 +71,11 @@ from deck_core import (
     normalize_rotation,
     rotation_degrees,
     rotation_frame,
+    sleep_frame,
+    sleep_image_frame,
+    sleep_image_hex,
+    active_sleep_mode,
+    active_sleep_timeout,
     setup_logging,
     slot_icon_frame,
     theme_background,
@@ -92,6 +97,10 @@ from deck_core import (
     _ICON_ROWS_PER_CHUNK,
     _ROTATE_ACK_TIMEOUT,
     _ROTATE_ATTEMPTS,
+    _SLEEP_ACK_TIMEOUT,
+    _SLEEP_ATTEMPTS,
+    _SLEEPIMG_ACK_TIMEOUT,
+    _SLEEPIMG_ROW_DELAY,
     _THEME_ACK_TIMEOUT,
     _THEME_ATTEMPTS,
     _apply_app_relaunch,
@@ -223,6 +232,7 @@ class ADeckDevice:
         self._tft_icons = False
         self._tft_theme = False
         self._tft_rotate = False
+        self._tft_sleep = False
         self._theme_id = None
         self._rotation = None
         self._last_error = ""
@@ -334,6 +344,7 @@ class ADeckDevice:
             self._tft_icons = False
             self._tft_theme = False
             self._tft_rotate = False
+            self._tft_sleep = False
             self._theme_id = None
             self._rotation = None
             self._last_sync = None
@@ -433,6 +444,7 @@ class ADeckDevice:
                     self._tft_icons = False
                     self._tft_theme = False
                     self._tft_rotate = False
+                    self._tft_sleep = False
                     caps_deadline = time.monotonic() + 0.35
                     while time.monotonic() < caps_deadline and not self._stop.is_set():
                         extra = connection.readline().decode(
@@ -444,9 +456,16 @@ class ADeckDevice:
                             self._tft_theme = True
                         elif extra == "ADECK_CAPS\tROTATE":
                             self._tft_rotate = True
+                        elif extra == "ADECK_CAPS\tSLEEP":
+                            self._tft_sleep = True
                         elif extra.startswith("PRESS\t"):
                             self._handle_line(extra)
-                        if self._tft_icons and self._tft_theme and self._tft_rotate:
+                        if (
+                            self._tft_icons
+                            and self._tft_theme
+                            and self._tft_rotate
+                            and self._tft_sleep
+                        ):
                             break
 
                     return connection
@@ -458,6 +477,8 @@ class ADeckDevice:
                     self._tft_theme = True
                 if line == "ADECK_CAPS\tROTATE":
                     self._tft_rotate = True
+                if line == "ADECK_CAPS\tSLEEP":
+                    self._tft_sleep = True
         except Exception:
             connection.close()
             raise
@@ -518,6 +539,7 @@ class ADeckDevice:
             self._tft_icons = False
             self._tft_theme = False
             self._tft_rotate = False
+            self._tft_sleep = False
             self._theme_id = None
             self._rotation = None
             self._last_sync = False
@@ -576,6 +598,11 @@ class ADeckDevice:
         elif line == "ADECK_CAPS\tROTATE":
             with self._state_lock:
                 self._tft_rotate = True
+        elif line == "ADECK_CAPS\tSLEEP":
+            with self._state_lock:
+                self._tft_sleep = True
+        elif line == "SLEEP":
+            self._send_sleep_image_now()
         elif line == f"ADECK_READY\t{PROTOCOL_VERSION}":
             self._resync.set()
 
@@ -603,6 +630,7 @@ class ADeckDevice:
                     connection, wanted, txid, background=background
                 )
                 self._push_rotation(connection, active_rotation(config), txid)
+                self._push_sleep(connection, config, txid)
 
                 blend = (
                     theme_background(in_force, background)
@@ -704,6 +732,81 @@ class ADeckDevice:
             value,
         )
         return self._rotation
+
+    def _push_sleep(self, connection, config, txid):
+        with self._state_lock:
+            capable = self._tft_sleep
+        if connection is None or not capable:
+            return
+        seconds = active_sleep_timeout(config)
+        mode = active_sleep_mode(config)
+        expected = f"CFG_SLEEP_OK\t{txid}"
+        rejected = f"CFG_SLEEP_ERR\t{txid}\t"
+        frame = sleep_frame(seconds, mode, txid)
+        for attempt in range(1, _SLEEP_ATTEMPTS + 1):
+            if self._stop.is_set():
+                return
+            try:
+                connection.write(frame)
+                connection.flush()
+                deadline = time.monotonic() + _SLEEP_ACK_TIMEOUT
+                while time.monotonic() < deadline and not self._stop.is_set():
+                    reply = connection.readline().decode("ascii", errors="ignore").strip()
+                    if reply == expected:
+                        LOGGER.info("Applied sleep %ss (%s)", seconds, mode)
+                        return
+                    if reply.startswith(rejected):
+                        break
+                    if reply.startswith("PRESS\t") or reply.startswith("ADECK_CAPS\t"):
+                        self._handle_line(reply)
+            except Exception as error:
+                LOGGER.debug("Sleep write failed: %s", error)
+                return
+        LOGGER.warning("Sleep settings were not accepted by the board")
+
+    def _send_sleep_image_now(self):
+        with self._state_lock:
+            connection = self._connection
+            capable = self._tft_sleep
+            config = self.store.config if self.store else None
+        if connection is None or not capable or not config:
+            return
+        if active_sleep_mode(config) != "image":
+            return
+        self._push_sleep_image(connection, config, secrets.token_hex(6))
+
+    def _push_sleep_image(self, connection, config, txid):
+        settings = (config or {}).get("settings") or {}
+        payload = sleep_image_hex(settings.get("sleepImage") if isinstance(settings, dict) else "")
+        frame = sleep_image_frame(payload, txid)
+        if not frame:
+            return
+        expected = f"CFG_SLEEPIMG_OK\t{txid}"
+        rejected = f"CFG_SLEEPIMG_ERR\t{txid}\t"
+        lines = [line for line in frame.split(b"\n") if line]
+        for attempt in range(1, _SLEEP_ATTEMPTS + 1):
+            if self._stop.is_set():
+                return
+            try:
+                for line in lines:
+                    connection.write(line + b"\n")
+                    connection.flush()
+                    time.sleep(_SLEEPIMG_ROW_DELAY)
+                deadline = time.monotonic() + _SLEEPIMG_ACK_TIMEOUT
+                while time.monotonic() < deadline and not self._stop.is_set():
+                    reply = connection.readline().decode("ascii", errors="ignore").strip()
+                    if reply == expected:
+                        LOGGER.info("Pushed sleep image for transaction %s", txid)
+                        return
+                    if reply.startswith(rejected):
+                        LOGGER.debug("Sleep image rejected: %s", reply)
+                        break
+                    if reply.startswith("PRESS\t") or reply.startswith("ADECK_CAPS\t"):
+                        self._handle_line(reply)
+            except Exception as error:
+                LOGGER.debug("Sleep image write failed: %s", error)
+                return
+        LOGGER.warning("Sleep image was not accepted by the board")
 
     def _push_app_icons(self, connection, buttons, txid, background="#000000"):
         with self._state_lock:

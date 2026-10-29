@@ -509,15 +509,108 @@ function renderEditor() {
   updateStatusBar();
 }
 
+const SLEEP_IMAGE_W = 128;
+const SLEEP_IMAGE_H = 96;
+
+function paintSleepPreview(hex) {
+  const canvas = els.sleepImagePreview;
+  if (!canvas || !canvas.getContext) return;
+  const text = String(hex || "").trim().toUpperCase();
+  if (text.length !== SLEEP_IMAGE_W * SLEEP_IMAGE_H * 4) return;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#000000";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  const scaleX = canvas.width / SLEEP_IMAGE_W;
+  const scaleY = canvas.height / SLEEP_IMAGE_H;
+  for (let y = 0; y < SLEEP_IMAGE_H; y++) {
+    for (let x = 0; x < SLEEP_IMAGE_W; x++) {
+      const i = (y * SLEEP_IMAGE_W + x) * 4;
+      const rgb = parseInt(text.slice(i, i + 4), 16);
+      if (Number.isNaN(rgb)) return;
+      const r = ((rgb >> 11) & 31) * 8;
+      const g = ((rgb >> 5) & 63) * 4;
+      const b = (rgb & 31) * 8;
+      ctx.fillStyle = "rgb(" + r + "," + g + "," + b + ")";
+      ctx.fillRect(x * scaleX, y * scaleY, scaleX, scaleY);
+    }
+  }
+}
+
+function updateSleepImageUi() {
+  const custom = !!(els.settingSleepMode && els.settingSleepMode.value === "image");
+  const hex = String(state.settings.sleepImage || "").trim();
+  const hasImage = custom && hex.length === SLEEP_IMAGE_W * SLEEP_IMAGE_H * 4;
+  if (els.sleepImageField) els.sleepImageField.hidden = !custom;
+  if (els.sleepImagePreview) {
+    els.sleepImagePreview.hidden = !hasImage;
+    if (hasImage) paintSleepPreview(hex);
+  }
+  if (els.sleepImagePickBtn) els.sleepImagePickBtn.textContent = hasImage ? "CHANGE IMAGE" : "ADD IMAGE";
+}
+
+function encodeSleepImageFile(file) {
+  return new Promise((resolve, reject) => {
+    if (!file) {
+      reject(new Error("No file"));
+      return;
+    }
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const canvas = document.createElement("canvas");
+      canvas.width = SLEEP_IMAGE_W;
+      canvas.height = SLEEP_IMAGE_H;
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#000000";
+      ctx.fillRect(0, 0, SLEEP_IMAGE_W, SLEEP_IMAGE_H);
+      const scale = Math.max(SLEEP_IMAGE_W / img.width, SLEEP_IMAGE_H / img.height);
+      const w = img.width * scale;
+      const h = img.height * scale;
+      ctx.drawImage(img, (SLEEP_IMAGE_W - w) / 2, (SLEEP_IMAGE_H - h) / 2, w, h);
+      const data = ctx.getImageData(0, 0, SLEEP_IMAGE_W, SLEEP_IMAGE_H).data;
+      let hex = "";
+      for (let i = 0; i < data.length; i += 4) {
+        const r = data[i] >> 3;
+        const g = data[i + 1] >> 2;
+        const b = data[i + 2] >> 3;
+        const rgb = (r << 11) | (g << 5) | b;
+        hex += rgb.toString(16).padStart(4, "0");
+      }
+      resolve(hex.toUpperCase());
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Bad image"));
+    };
+    img.src = url;
+  });
+}
+
+async function onSleepImagePicked(file) {
+  try {
+    state.settings.sleepMode = "image";
+    if (els.settingSleepMode) els.settingSleepMode.value = "image";
+    state.settings.sleepImage = await encodeSleepImageFile(file);
+    persistSettings();
+    updateSleepImageUi();
+    toast("SLEEP IMAGE READY — SAVE SETTINGS", "info");
+  } catch (_) {
+    toast("SLEEP IMAGE FAILED", "error");
+  }
+}
+
 function renderSettingsForm() {
   const s = state.settings;
   els.settingTheme.value = s.theme || "light";
   if (els.settingAppearance) els.settingAppearance.value = normalizeAppearance(s.appearance);
   els.settingLanguage.value = s.language || "en";
   els.settingDeviceName.value = s.deviceName || "";
-  els.settingBrightness.value = String(s.brightness ?? 80);
-  els.brightnessVal.textContent = (s.brightness ?? 80) + "%";
   els.settingSleep.value = String(s.sleepTimeout ?? "60");
+  if (els.settingSleepMode) {
+    els.settingSleepMode.value = s.sleepMode === "image" ? "image" : "black";
+  }
+  updateSleepImageUi();
   els.settingWifi.value = s.wifiMode || "off";
   if (els.settingAppRelaunch) {
     els.settingAppRelaunch.value =
@@ -761,8 +854,9 @@ function buildConfigObject() {
       appearance: normalizeAppearance(state.settings.appearance),
       language: state.settings.language,
       deviceName: state.settings.deviceName,
-      brightness: state.settings.brightness,
       sleepTimeout: Number(state.settings.sleepTimeout),
+      sleepMode: state.settings.sleepMode === "image" ? "image" : "black",
+      sleepImage: String(state.settings.sleepImage || ""),
       defaultProfile: (
         state.profiles.find((p) => p.id === state.settings.defaultProfileId) ||
         activeProfile() ||
@@ -1189,8 +1283,9 @@ function collectSettingsFromForm() {
     appearance: normalizeAppearance(els.settingAppearance && els.settingAppearance.value),
     language: els.settingLanguage.value || "en",
     deviceName: (els.settingDeviceName.value || "ADECK-UNO").trim().slice(0, 24),
-    brightness: Number(els.settingBrightness.value) || 80,
     sleepTimeout: els.settingSleep.value || "60",
+    sleepMode: els.settingSleepMode && els.settingSleepMode.value === "image" ? "image" : "black",
+    sleepImage: String(state.settings.sleepImage || ""),
     defaultProfileId: els.settingDefaultProfile.value || null,
     wifiMode: els.settingWifi.value || "off",
     appRelaunchMode: ["minimize", "close"].includes(

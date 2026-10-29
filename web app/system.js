@@ -1021,9 +1021,23 @@ function wireEvents() {
     }
   });
 
-  els.settingBrightness.addEventListener("input", (e) => {
-    els.brightnessVal.textContent = e.target.value + "%";
-  });
+  if (els.settingSleepMode) {
+    els.settingSleepMode.addEventListener("change", () => {
+      state.settings.sleepMode = els.settingSleepMode.value === "image" ? "image" : "black";
+      persistSettings();
+      updateSleepImageUi();
+    });
+  }
+  if (els.sleepImagePickBtn) {
+    els.sleepImagePickBtn.addEventListener("click", () => els.settingSleepImage.click());
+  }
+  if (els.settingSleepImage) {
+    els.settingSleepImage.addEventListener("change", (e) => {
+      const file = e.target.files && e.target.files[0];
+      e.target.value = "";
+      if (file) onSleepImagePicked(file);
+    });
+  }
   els.settingsSaveBtn.addEventListener("click", saveSettings);
   els.settingsResetBtn.addEventListener("click", resetSettings);
   if (els.themeToggleBtn) els.themeToggleBtn.addEventListener("click", toggleTheme);

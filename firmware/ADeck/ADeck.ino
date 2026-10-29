@@ -16,7 +16,7 @@
 #define TS_MAXY 920
 
 const uint32_t CONFIG_MAGIC = 0x41444543;
-const uint8_t CONFIG_VERSION = 3;
+const uint8_t CONFIG_VERSION = 4;
 const uint8_t PROTOCOL_VERSION = 2;
 const uint8_t TOTAL_APPS = 6;
 const uint8_t LABEL_SIZE = 11;
@@ -29,11 +29,16 @@ const uint8_t ICON_SIZE = 32;
 const uint8_t ICON_DRAW = 72;
 const uint8_t ICON_BITMAP = ICON_DRAW;
 const uint8_t ICON_INSET = 0;
-const uint8_t ICON_BAND = 4;
+const uint8_t ICON_BAND = 2;
 const uint8_t ICON_GAP = 10;
 const uint8_t TEXT_H = 8;
 const unsigned long ICON_STREAM_IDLE_MS = 120;
 const unsigned long ICON_RECV_TIMEOUT_MS = 2000;
+const uint8_t SLEEP_W = 128;
+const uint8_t SLEEP_H = 96;
+const uint8_t SLEEP_CHUNK = 16;
+const uint8_t SLEEP_MODE_BLACK = 0;
+const uint8_t SLEEP_MODE_IMAGE = 1;
 
 
 int16_t screenW = 320;
@@ -109,6 +114,8 @@ struct PersistentRecord {
   char labels[TOTAL_APPS][LABEL_SIZE];
   uint16_t colors[TOTAL_APPS];
   uint16_t theme[THEME_COUNT];
+  uint16_t sleepSeconds;
+  uint8_t sleepMode;
   uint16_t crc;
 };
 
@@ -157,6 +164,14 @@ bool touchLatched = false;
 unsigned long pressedUntil = 0;
 unsigned long nextPressAllowed = 0;
 unsigned long lastTouchAt = 0;
+uint16_t sleepSeconds = 60;
+uint8_t sleepMode = SLEEP_MODE_BLACK;
+uint16_t sleepImgChunks = 0;
+bool sleeping = false;
+bool receivingSleepImg = false;
+unsigned long lastActivityAt = 0;
+unsigned long sleepImgAt = 0;
+char sleepImgIdBuf[17];
 
 uint16_t crc16Update(uint16_t crc, uint8_t value) {
   crc ^= static_cast<uint16_t>(value) << 8;
@@ -269,6 +284,16 @@ void configFromRecord(DeviceConfig &target, const PersistentRecord &record) {
     target.slots[i].color = record.colors[i];
   }
   memcpy(target.theme.values, record.theme, sizeof(record.theme));
+  sleepSeconds = record.sleepSeconds;
+  if (
+    sleepSeconds != 0 &&
+    sleepSeconds != 30 &&
+    sleepSeconds != 60 &&
+    sleepSeconds != 300
+  ) {
+    sleepSeconds = 60;
+  }
+  sleepMode = record.sleepMode == SLEEP_MODE_IMAGE ? SLEEP_MODE_IMAGE : SLEEP_MODE_BLACK;
 }
 
 void fillRecord(
@@ -287,6 +312,8 @@ void fillRecord(
     record.colors[i] = source.slots[i].color;
   }
   memcpy(record.theme, source.theme.values, sizeof(record.theme));
+  record.sleepSeconds = sleepSeconds;
+  record.sleepMode = sleepMode;
   record.crc = recordCrc(record);
 }
 
@@ -709,6 +736,7 @@ void paintAllStars() {
 }
 
 void serviceStars(unsigned long now) {
+  if (sleeping) return;
   if (bgEffect != BG_EFFECT_STARS) return;
   if (!displayReady || drawing || pressedVisible) return;
   if (iconStreamActive(now)) return;
@@ -868,6 +896,7 @@ void requestKeyRedraw(uint8_t index) {
 
 
 void serviceRedraw(unsigned long now) {
+  if (sleeping) return;
   if (!displayReady || drawing || pressedVisible) return;
   if (!fullRedrawPending && !keyRedrawPending) return;
 
@@ -1366,7 +1395,7 @@ void receiveRotate(const String &line) {
     Serial.println("\tBAD_VALUE");
     return;
   }
-  if (receivingConfig || receivingTheme || iconRecvIndex >= 0) {
+  if (receivingConfig || receivingTheme || iconRecvIndex >= 0 || receivingSleepImg) {
     Serial.print("CFG_ROTATE_ERR\t");
     Serial.print(id);
     Serial.println("\tBUSY");
@@ -1412,7 +1441,7 @@ void beginIcon(const String &line) {
   }
 
 
-  if (receivingConfig || receivingTheme) {
+  if (receivingConfig || receivingTheme || receivingSleepImg) {
     sendIconError(id, index, "BUSY");
     return;
   }
@@ -1496,6 +1525,175 @@ void endIcon(const String &line) {
   requestKeyRedraw(index);
 }
 
+void noteActivity() {
+  lastActivityAt = millis();
+}
+
+void paintSleepPixel(uint8_t x, uint8_t y, uint16_t color) {
+  if (!displayReady || !sleeping || x >= SLEEP_W || y >= SLEEP_H) return;
+  const int16_t x0 = static_cast<int16_t>((static_cast<uint16_t>(x) * screenW) / SLEEP_W);
+  const int16_t x1 = static_cast<int16_t>((static_cast<uint16_t>(x + 1) * screenW) / SLEEP_W);
+  const int16_t y0 = static_cast<int16_t>((static_cast<uint16_t>(y) * screenH) / SLEEP_H);
+  const int16_t y1 = static_cast<int16_t>((static_cast<uint16_t>(y + 1) * screenH) / SLEEP_H);
+  const int16_t w = x1 - x0;
+  const int16_t h = y1 - y0;
+  if (w <= 0 || h <= 0) return;
+  gfx->fillRect(x0, y0, w, h, color);
+}
+
+void enterSleep() {
+  if (sleeping) return;
+  sleeping = true;
+  if (displayReady) gfx->fillScreen(0x0000);
+  if (sleepMode == SLEEP_MODE_IMAGE) Serial.println("SLEEP");
+}
+
+void wakeFromSleep() {
+  if (!sleeping) return;
+  sleeping = false;
+  receivingSleepImg = false;
+  noteActivity();
+  requestFullRedraw();
+}
+
+void sendSleepError(const String &id, const char *reason) {
+  Serial.print("CFG_SLEEP_ERR\t");
+  if (id.length()) Serial.print(id);
+  else Serial.print('-');
+  Serial.print('\t');
+  Serial.println(reason);
+}
+
+void sendSleepImgError(const String &id, const char *reason) {
+  Serial.print("CFG_SLEEPIMG_ERR\t");
+  if (id.length()) Serial.print(id);
+  else Serial.print('-');
+  Serial.print('\t');
+  Serial.println(reason);
+}
+
+void receiveSleep(const String &line) {
+  const int firstTab = line.indexOf('\t');
+  const int secondTab = line.indexOf('\t', firstTab + 1);
+  const int thirdTab = line.indexOf('\t', secondTab + 1);
+  if (firstTab < 0 || secondTab < 0 || thirdTab < 0 || line.indexOf('\t', thirdTab + 1) >= 0) {
+    sendSleepError("-", "BAD_LINE");
+    return;
+  }
+  const String id = line.substring(firstTab + 1, secondTab);
+  if (!validTransactionId(id)) {
+    sendSleepError("-", "BAD_TX");
+    return;
+  }
+  if (receivingConfig || receivingTheme || iconRecvIndex >= 0 || receivingSleepImg) {
+    sendSleepError(id, "BUSY");
+    return;
+  }
+  const int seconds = line.substring(secondTab + 1, thirdTab).toInt();
+  const int mode = line.substring(thirdTab + 1).toInt();
+  if (seconds != 0 && seconds != 30 && seconds != 60 && seconds != 300) {
+    sendSleepError(id, "BAD_VALUE");
+    return;
+  }
+  if (mode != SLEEP_MODE_BLACK && mode != SLEEP_MODE_IMAGE) {
+    sendSleepError(id, "BAD_MODE");
+    return;
+  }
+  sleepSeconds = static_cast<uint16_t>(seconds);
+  sleepMode = static_cast<uint8_t>(mode);
+  commitConfig(config);
+  if (sleeping) {
+    if (displayReady) gfx->fillScreen(0x0000);
+    if (sleepMode == SLEEP_MODE_IMAGE) Serial.println("SLEEP");
+  }
+  Serial.print("CFG_SLEEP_OK\t");
+  Serial.println(id);
+}
+
+void beginSleepImg(const String &line) {
+  const int firstTab = line.indexOf('\t');
+  const int secondTab = line.indexOf('\t', firstTab + 1);
+  const int thirdTab = line.indexOf('\t', secondTab + 1);
+  if (firstTab < 0 || secondTab < 0 || thirdTab < 0) {
+    sendSleepImgError("-", "BAD_BEGIN");
+    return;
+  }
+  const String id = line.substring(firstTab + 1, secondTab);
+  if (!validTransactionId(id)) {
+    sendSleepImgError("-", "BAD_TX");
+    return;
+  }
+  if (receivingConfig || receivingTheme || iconRecvIndex >= 0) {
+    sendSleepImgError(id, "BUSY");
+    return;
+  }
+  if (!sleeping) {
+    sendSleepImgError(id, "NOT_SLEEPING");
+    return;
+  }
+  if (
+    line.substring(secondTab + 1, thirdTab).toInt() != SLEEP_W ||
+    line.substring(thirdTab + 1).toInt() != SLEEP_H
+  ) {
+    sendSleepImgError(id, "BAD_BEGIN");
+    return;
+  }
+  receivingSleepImg = true;
+  memset(sleepImgIdBuf, 0, sizeof(sleepImgIdBuf));
+  id.toCharArray(sleepImgIdBuf, sizeof(sleepImgIdBuf));
+  sleepImgAt = millis();
+  sleepImgChunks = 0;
+}
+
+void receiveSleepImgRow(const String &line) {
+  if (!receivingSleepImg) return;
+  const int firstTab = line.indexOf('\t');
+  const int secondTab = line.indexOf('\t', firstTab + 1);
+  const int thirdTab = line.indexOf('\t', secondTab + 1);
+  const int fourthTab = line.indexOf('\t', thirdTab + 1);
+  if (firstTab < 0 || secondTab < 0 || thirdTab < 0 || fourthTab < 0) return;
+  const String id = line.substring(firstTab + 1, secondTab);
+  if (id != sleepImgIdBuf) return;
+  const int row = line.substring(secondTab + 1, thirdTab).toInt();
+  const int off = line.substring(thirdTab + 1, fourthTab).toInt();
+  if (row < 0 || row >= SLEEP_H) return;
+  if (off < 0 || off >= SLEEP_W || (off % SLEEP_CHUNK) != 0) return;
+  const uint8_t count = static_cast<uint8_t>(
+    SLEEP_W - off < SLEEP_CHUNK ? SLEEP_W - off : SLEEP_CHUNK
+  );
+  const char *hex = line.c_str() + fourthTab + 1;
+  if (strlen(hex) != static_cast<size_t>(count) * 4) return;
+  for (uint8_t x = 0; x < count; x++) {
+    uint16_t pixel = 0;
+    for (uint8_t nibble = 0; nibble < 4; nibble++) {
+      const int8_t value = hexValue(hex[x * 4 + nibble]);
+      if (value < 0) return;
+      pixel = static_cast<uint16_t>((pixel << 4) | value);
+    }
+    paintSleepPixel(static_cast<uint8_t>(off + x), static_cast<uint8_t>(row), pixel);
+  }
+  sleepImgChunks++;
+  sleepImgAt = millis();
+}
+
+void endSleepImg(const String &line) {
+  if (!receivingSleepImg) return;
+  const int firstTab = line.indexOf('\t');
+  if (firstTab < 0 || line.indexOf('\t', firstTab + 1) >= 0) return;
+  const String id = line.substring(firstTab + 1);
+  if (id != sleepImgIdBuf) return;
+  receivingSleepImg = false;
+  const uint16_t expect = static_cast<uint16_t>(
+    SLEEP_H * ((SLEEP_W + SLEEP_CHUNK - 1) / SLEEP_CHUNK)
+  );
+  if (sleepImgChunks != expect) {
+    sendSleepImgError(id, "INCOMPLETE");
+    return;
+  }
+  Serial.print("CFG_SLEEPIMG_OK\t");
+  Serial.println(id);
+}
+
 void handleSerialLine(const String &line) {
   if (line == "PING") {
     Serial.print("ADECK_PONG\t");
@@ -1503,6 +1701,7 @@ void handleSerialLine(const String &line) {
     Serial.println("ADECK_CAPS\tICON");
     Serial.println("ADECK_CAPS\tTHEME");
     Serial.println("ADECK_CAPS\tROTATE");
+    Serial.println("ADECK_CAPS\tSLEEP");
     return;
   }
   if (line.startsWith("CFG_BEGIN\t")) {
@@ -1533,6 +1732,22 @@ void handleSerialLine(const String &line) {
     receiveRotate(line);
     return;
   }
+  if (line.startsWith("CFG_SLEEP\t")) {
+    receiveSleep(line);
+    return;
+  }
+  if (line.startsWith("CFG_SLEEPIMG_BEGIN\t")) {
+    beginSleepImg(line);
+    return;
+  }
+  if (line.startsWith("CFG_SLEEPIMG_ROW\t")) {
+    receiveSleepImgRow(line);
+    return;
+  }
+  if (line.startsWith("CFG_SLEEPIMG_END\t")) {
+    endSleepImg(line);
+    return;
+  }
   if (line.startsWith("CFG_ICON_BEGIN\t")) {
     beginIcon(line);
     return;
@@ -1558,6 +1773,10 @@ void readSerial() {
           failTheme(themeTransactionId, "LINE_TOO_LONG");
         }
       } else if (serialLine.length()) {
+        if (serialLine.startsWith("CFG_") && !serialLine.startsWith("CFG_SLEEPIMG_")) {
+          if (sleeping) wakeFromSleep();
+          else noteActivity();
+        }
         handleSerialLine(serialLine);
       }
       serialLine = "";
@@ -1593,6 +1812,14 @@ void readTouch(unsigned long now) {
   }
 
   lastTouchAt = now;
+  if (sleeping) {
+    if (!touchLatched) {
+      touchLatched = true;
+      wakeFromSleep();
+    }
+    return;
+  }
+  noteActivity();
   if (touchLatched || !timeReached(now, nextPressAllowed)) return;
   touchLatched = true;
 
@@ -1627,10 +1854,12 @@ void setup() {
   requestFullRedraw();
   serviceRedraw(millis());
   nextPressAllowed = millis() + 1200;
+  lastActivityAt = millis();
 
   Serial.println("ADECK_CAPS\tICON");
   Serial.println("ADECK_CAPS\tTHEME");
   Serial.println("ADECK_CAPS\tROTATE");
+  Serial.println("ADECK_CAPS\tSLEEP");
   Serial.print("ADECK_READY\t");
   Serial.println(PROTOCOL_VERSION);
 }
@@ -1659,6 +1888,19 @@ void loop() {
     iconRecvIndex = -1;
     iconRecvMask = 0;
     sendIconError(lastSyncId, index, "TIMEOUT");
+  }
+
+  if (receivingSleepImg && timeReached(now, sleepImgAt + ICON_RECV_TIMEOUT_MS)) {
+    receivingSleepImg = false;
+    sendSleepImgError(String(sleepImgIdBuf), "TIMEOUT");
+  }
+
+  if (
+    !sleeping &&
+    sleepSeconds > 0 &&
+    timeReached(now, lastActivityAt + static_cast<unsigned long>(sleepSeconds) * 1000UL)
+  ) {
+    enterSleep();
   }
 
   updatePressedView(now);
