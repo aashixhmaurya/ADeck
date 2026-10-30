@@ -805,7 +805,7 @@ function refreshSlotUI() {
 }
 
 const DEFAULT_DECK_THEME = "adeck-classic";
-const THEMES_CACHE_KEY = "adeck.themes.v2";
+const THEMES_CACHE_KEY = "adeck.themes.v3";
 
 let themeRegistry = null;
 let appliedThemeVars = [];

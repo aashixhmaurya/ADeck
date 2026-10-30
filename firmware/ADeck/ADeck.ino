@@ -75,11 +75,28 @@ const uint8_t THEME_COUNT = 7;
 
 const uint8_t BG_EFFECT_NONE = 0;
 const uint8_t BG_EFFECT_STARS = 1;
+const uint8_t BG_EFFECT_CAT = 2;
 
 const uint8_t STAR_COUNT = 16;
 const uint8_t STAR_SIZE = 2;
 const uint8_t STAR_MIN_SEP = 34;
 const unsigned long STAR_FRAME_MS = 80;
+
+const uint8_t CAT_W = 16;
+const uint8_t CAT_H = 16;
+const unsigned long CAT_FRAME_MS = 70;
+const uint16_t CAT_BODY[2][16] = {
+  { 0x8000, 0xC000, 0x6028, 0x707C, 0x387C, 0x18FE, 0x1FFE, 0x0FFE, 0x0FFE, 0x1FFE, 0x1FFC, 0x0A28, 0x0A28, 0x0820, 0x1830, 0x0000 },
+  { 0x4000, 0xC000, 0x6028, 0x707C, 0x387C, 0x18FE, 0x1FFE, 0x0FFE, 0x0FFE, 0x1FFE, 0x1FFC, 0x1414, 0x1414, 0x1010, 0x3018, 0x0000 }
+};
+const uint16_t CAT_DOWN[2][16] = {
+  { 0x0240, 0x0660, 0x0FF8, 0x0FF8, 0x0FF8, 0x07F0, 0x07F0, 0x03E0, 0x03E0, 0x03E0, 0x0630, 0x0410, 0x0410, 0x0C18, 0x0000, 0x0000 },
+  { 0x0240, 0x0660, 0x0FF8, 0x0FF8, 0x0FF8, 0x07F0, 0x07F0, 0x03E0, 0x03E0, 0x05D0, 0x0550, 0x0220, 0x0630, 0x0000, 0x0000, 0x0000 }
+};
+const uint16_t CAT_UP[2][16] = {
+  { 0x0100, 0x0300, 0x0240, 0x0660, 0x0FF8, 0x0FF8, 0x07F0, 0x07F0, 0x03E0, 0x03E0, 0x0630, 0x0410, 0x0410, 0x0C18, 0x0000, 0x0000 },
+  { 0x0200, 0x0300, 0x0240, 0x0660, 0x0FF8, 0x0FF8, 0x07F0, 0x07F0, 0x03E0, 0x05D0, 0x0550, 0x0220, 0x0630, 0x0000, 0x0000, 0x0000 }
+};
 
 const uint8_t SELECTED_MIX = 100;
 
@@ -90,6 +107,31 @@ struct StarDot {
   int8_t dy;
   uint8_t shade;
 };
+
+struct CatWalk {
+  int16_t x;
+  int16_t y;
+  int16_t tx;
+  int16_t ty;
+  int8_t dx;
+  int8_t dy;
+  uint8_t frame;
+  uint8_t facing;
+  uint8_t gait;
+  uint16_t roam;
+  uint8_t zone;
+  uint8_t back;
+};
+
+struct CatLane {
+  uint8_t axis;
+  int16_t at;
+  int16_t lo;
+  int16_t hi;
+};
+
+CatLane catLanes[8];
+uint8_t catLaneN = 0;
 
 struct SlotConfig {
   char label[LABEL_SIZE];
@@ -137,6 +179,8 @@ uint8_t stagedBgEffect = BG_EFFECT_NONE;
 uint8_t bgEffect = BG_EFFECT_NONE;
 StarDot stars[STAR_COUNT];
 unsigned long nextStarFrame = 0;
+CatWalk cat;
+unsigned long nextCatFrame = 0;
 uint32_t activeGeneration = 0;
 int8_t activeRecord = -1;
 uint16_t slotIcons[TOTAL_APPS][ICON_SIZE * ICON_SIZE];
@@ -428,6 +472,8 @@ void applyDisplayRotation(uint8_t rotation) {
   rebuildSlotLayout();
   if (bgEffect == BG_EFFECT_STARS) {
     seedStars();
+  } else if (bgEffect == BG_EFFECT_CAT) {
+    seedCat();
   }
 }
 
@@ -886,6 +932,389 @@ void serviceStars(unsigned long now) {
   }
 }
 
+void addCatLane(uint8_t axis, int16_t at, int16_t lo, int16_t hi) {
+  if (catLaneN >= 8) return;
+  if (hi < lo) hi = lo;
+  catLanes[catLaneN].axis = axis;
+  catLanes[catLaneN].at = at;
+  catLanes[catLaneN].lo = lo;
+  catLanes[catLaneN].hi = hi;
+  catLaneN++;
+}
+
+void buildCatLanes() {
+  catLaneN = 0;
+  const int16_t xMax = static_cast<int16_t>(screenW - CAT_W);
+  const int16_t yMax = static_cast<int16_t>(screenH - CAT_H);
+  addCatLane(0, 0, 0, xMax);
+  addCatLane(0, yMax, 0, xMax);
+  addCatLane(1, 0, 0, yMax);
+  addCatLane(1, xMax, 0, yMax);
+
+  const uint8_t colGaps = gridCols > 1 ? static_cast<uint8_t>(gridCols - 1) : 0;
+  const uint8_t rowGaps = gridRows > 1 ? static_cast<uint8_t>(gridRows - 1) : 0;
+  for (uint8_t g = 0; g < colGaps && catLaneN < 8; g++) {
+    const int left = slotX[g] + KEY_W;
+    const int span = slotX[g + 1] - left;
+    int x = left + span / 2 - CAT_W / 2;
+    if (x < 0) x = 0;
+    if (x > xMax) x = xMax;
+    addCatLane(1, static_cast<int16_t>(x), 0, yMax);
+  }
+  for (uint8_t g = 0; g < rowGaps && catLaneN < 8; g++) {
+    const int top = slotY[g * gridCols] + KEY_H;
+    const int span = slotY[(g + 1) * gridCols] - top;
+    int y = top + (span > CAT_H ? (span - CAT_H) / 2 : 0);
+    if (y < 0) y = 0;
+    if (y > yMax) y = yMax;
+    addCatLane(0, static_cast<int16_t>(y), 0, xMax);
+  }
+}
+
+bool catLaneIsGap(uint8_t i) {
+  if (i >= catLaneN) return false;
+  if (catLanes[i].axis == 0) {
+    return catLanes[i].at != 0 && catLanes[i].at != static_cast<int16_t>(screenH - CAT_H);
+  }
+  return catLanes[i].at != 0 && catLanes[i].at != static_cast<int16_t>(screenW - CAT_W);
+}
+
+bool catFree(int x, int y) {
+  if (x < 0 || y < 0 || x > screenW - CAT_W || y > screenH - CAT_H) return false;
+  if (!catLaneN) buildCatLanes();
+  for (uint8_t i = 0; i < catLaneN; i++) {
+    if (catLanes[i].axis == 0) {
+      if (y == catLanes[i].at && x >= catLanes[i].lo && x <= catLanes[i].hi) return true;
+    } else if (x == catLanes[i].at && y >= catLanes[i].lo && y <= catLanes[i].hi) {
+      return true;
+    }
+  }
+  return false;
+}
+
+uint8_t catChoices(int x, int y, int8_t *dxs, int8_t *dys) {
+  static const int8_t kDx[4] = {1, -1, 0, 0};
+  static const int8_t kDy[4] = {0, 0, 1, -1};
+  uint8_t n = 0;
+  for (uint8_t i = 0; i < 4; i++) {
+    if (catFree(x + kDx[i], y + kDy[i])) {
+      dxs[n] = kDx[i];
+      dys[n] = kDy[i];
+      n++;
+    }
+  }
+  return n;
+}
+
+void faceCat() {
+  if (cat.dx > 0) cat.facing = 1;
+  else if (cat.dx < 0) cat.facing = 0;
+  else if (cat.dy < 0) cat.facing = 2;
+  else if (cat.dy > 0) cat.facing = 3;
+}
+
+int16_t catManhattan(int16_t x, int16_t y) {
+  int16_t dx = static_cast<int16_t>(x - cat.tx);
+  int16_t dy = static_cast<int16_t>(y - cat.ty);
+  if (dx < 0) dx = static_cast<int16_t>(-dx);
+  if (dy < 0) dy = static_cast<int16_t>(-dy);
+  return static_cast<int16_t>(dx + dy);
+}
+
+bool catBehindHeading(int16_t x, int16_t y) {
+  int16_t ax = static_cast<int16_t>(x - cat.x);
+  int16_t ay = static_cast<int16_t>(y - cat.y);
+  if (ax < 0) ax = static_cast<int16_t>(-ax);
+  if (ay < 0) ay = static_cast<int16_t>(-ay);
+  if (cat.dx > 0 && x <= cat.x && ay < 12) return true;
+  if (cat.dx < 0 && x >= cat.x && ay < 12) return true;
+  if (cat.dy > 0 && y <= cat.y && ax < 12) return true;
+  if (cat.dy < 0 && y >= cat.y && ax < 12) return true;
+  return false;
+}
+
+void pickCatTarget() {
+  if (!catLaneN) buildCatLanes();
+  uint8_t gaps[8];
+  uint8_t g = 0;
+  for (uint8_t i = 0; i < catLaneN; i++) {
+    if (catLaneIsGap(i)) gaps[g++] = i;
+  }
+  const bool lastGap = catLaneIsGap(cat.zone);
+  uint8_t lane = 0;
+  if (g && (!lastGap || random(10) < 8)) {
+    lane = gaps[static_cast<uint8_t>(random(g))];
+  } else if (catLaneN) {
+    lane = static_cast<uint8_t>(random(catLaneN));
+  }
+  const CatLane &L = catLanes[lane];
+  int16_t x = 0;
+  int16_t y = 0;
+  for (uint8_t t = 0; t < 6; t++) {
+    if (L.axis == 0) {
+      x = static_cast<int16_t>(L.lo + random(L.hi - L.lo + 1));
+      y = L.at;
+    } else {
+      x = L.at;
+      y = static_cast<int16_t>(L.lo + random(L.hi - L.lo + 1));
+    }
+    if (!catBehindHeading(x, y) && catFree(x, y)) break;
+  }
+  cat.tx = x;
+  cat.ty = y;
+  cat.zone = lane;
+  cat.roam = 0;
+}
+
+void steerCat() {
+  int8_t dxs[4];
+  int8_t dys[4];
+  const uint8_t n = catChoices(cat.x, cat.y, dxs, dys);
+  if (!n) {
+    cat.dx = 0;
+    cat.dy = 0;
+    return;
+  }
+
+  int8_t keepX[4];
+  int8_t keepY[4];
+  uint8_t m = 0;
+  bool headingOpen = false;
+  int8_t hx = 0;
+  int8_t hy = 0;
+  for (uint8_t i = 0; i < n; i++) {
+    const bool back =
+      n > 1 &&
+      dxs[i] == static_cast<int8_t>(-cat.dx) &&
+      dys[i] == static_cast<int8_t>(-cat.dy);
+    if (back) continue;
+    keepX[m] = dxs[i];
+    keepY[m] = dys[i];
+    m++;
+    if (dxs[i] == cat.dx && dys[i] == cat.dy) {
+      headingOpen = true;
+      hx = dxs[i];
+      hy = dys[i];
+    }
+  }
+
+  if (!m) {
+    cat.dx = dxs[0];
+    cat.dy = dys[0];
+    faceCat();
+    return;
+  }
+
+  if (headingOpen && n <= 2) {
+    cat.dx = hx;
+    cat.dy = hy;
+    faceCat();
+    return;
+  }
+
+  int16_t stay = 32767;
+  if (headingOpen) {
+    stay = catManhattan(
+      static_cast<int16_t>(cat.x + hx),
+      static_cast<int16_t>(cat.y + hy)
+    );
+  }
+
+  int8_t bx = keepX[0];
+  int8_t by = keepY[0];
+  int16_t bestD = 32767;
+  for (uint8_t i = 0; i < m; i++) {
+    const int16_t d = catManhattan(
+      static_cast<int16_t>(cat.x + keepX[i]),
+      static_cast<int16_t>(cat.y + keepY[i])
+    );
+    if (d < bestD) {
+      bestD = d;
+      bx = keepX[i];
+      by = keepY[i];
+    }
+  }
+
+  if (headingOpen && stay <= bestD) {
+    cat.dx = hx;
+    cat.dy = hy;
+  } else {
+    cat.dx = bx;
+    cat.dy = by;
+  }
+  faceCat();
+}
+
+void placeCatInGutter() {
+  buildCatLanes();
+  int8_t dxs[4];
+  int8_t dys[4];
+  for (uint8_t attempt = 0; attempt < 40; attempt++) {
+    if (!catLaneN) break;
+    uint8_t i = static_cast<uint8_t>(random(catLaneN));
+    if (attempt < 24 && !catLaneIsGap(i) && random(3)) continue;
+    const CatLane &L = catLanes[i];
+    int16_t x;
+    int16_t y;
+    if (L.axis == 0) {
+      x = static_cast<int16_t>(L.lo + random(L.hi - L.lo + 1));
+      y = L.at;
+    } else {
+      x = L.at;
+      y = static_cast<int16_t>(L.lo + random(L.hi - L.lo + 1));
+    }
+    if (catFree(x, y) && catChoices(x, y, dxs, dys)) {
+      cat.x = x;
+      cat.y = y;
+      cat.tx = x;
+      cat.ty = y;
+      cat.dx = 1;
+      cat.dy = 0;
+      cat.zone = i;
+      pickCatTarget();
+      steerCat();
+      return;
+    }
+  }
+  if (catLaneN) {
+    cat.x = catLanes[0].axis == 0 ? catLanes[0].lo : catLanes[0].at;
+    cat.y = catLanes[0].axis == 0 ? catLanes[0].at : catLanes[0].lo;
+    cat.tx = cat.x;
+    cat.ty = cat.y;
+    cat.dx = 1;
+    cat.dy = 0;
+    cat.facing = 1;
+    pickCatTarget();
+    steerCat();
+  }
+}
+
+void seedCat() {
+  randomSeed(micros() ^ (analogRead(A5) << 16) ^ millis());
+  buildCatLanes();
+  cat.zone = 255;
+  cat.roam = 0;
+  cat.back = 0;
+  cat.dx = 1;
+  cat.dy = 0;
+  cat.facing = 1;
+  placeCatInGutter();
+  cat.frame = 0;
+  cat.gait = 0;
+  nextCatFrame = 0;
+}
+
+void paintCatBox(int x, int y, bool spriteOnly) {
+  const uint16_t bg = config.theme.values[THEME_BACKGROUND];
+  const uint16_t fur = config.theme.values[THEME_ACCENT];
+  const uint16_t eye = config.theme.values[THEME_TEXT];
+  const uint8_t pose = cat.frame & 1;
+  for (uint8_t dy = 0; dy < CAT_H; dy++) {
+    for (uint8_t dx = 0; dx < CAT_W; dx++) {
+      uint16_t color = bg;
+      if (spriteOnly) {
+        const uint8_t srcX = cat.facing == 0
+          ? static_cast<uint8_t>(CAT_W - 1 - dx)
+          : dx;
+        const uint16_t mask = static_cast<uint16_t>(1u << (CAT_W - 1 - srcX));
+        uint16_t eyeBits = 0;
+        uint16_t bodyBits = 0;
+        if (cat.facing == 2) {
+          bodyBits = CAT_UP[pose][dy];
+        } else if (cat.facing == 3) {
+          bodyBits = CAT_DOWN[pose][dy];
+          if (dy == 3 || dy == 4) eyeBits = 0x0420;
+        } else {
+          bodyBits = CAT_BODY[pose][dy];
+          if (dy == 3 || dy == 4) eyeBits = 0x0028;
+        }
+        if (eyeBits & mask) color = eye;
+        else if (bodyBits & mask) color = fur;
+        else continue;
+      }
+      const int px = x + dx;
+      const int py = y + dy;
+      if (px < 0 || px >= screenW || py < 0 || py >= screenH) continue;
+      if (pointInKeyCell(px, py)) continue;
+      gfx->drawPixel(px, py, color);
+    }
+  }
+}
+
+void paintCat() {
+  if (bgEffect != BG_EFFECT_CAT || !displayReady) return;
+  paintCatBox(cat.x, cat.y, true);
+}
+
+void serviceCat(unsigned long now) {
+  if (sleeping) return;
+  if (bgEffect != BG_EFFECT_CAT) return;
+  if (!displayReady || drawing || pressedVisible) return;
+  if (iconStreamActive(now)) return;
+  if (fullRedrawPending || keyRedrawPending) return;
+  if (nextCatFrame != 0 && !timeReached(now, nextCatFrame)) return;
+  nextCatFrame = now + CAT_FRAME_MS;
+
+  int8_t dxs[4];
+  int8_t dys[4];
+  const uint8_t n = catChoices(cat.x, cat.y, dxs, dys);
+  if (!n) {
+    paintCatBox(cat.x, cat.y, false);
+    placeCatInGutter();
+    paintCat();
+    return;
+  }
+
+  if (!cat.back && (catManhattan(cat.x, cat.y) <= 2 || cat.roam > 380)) {
+    pickCatTarget();
+    if (
+      random(100) < 3 &&
+      (cat.dx || cat.dy) &&
+      catFree(cat.x - cat.dx, cat.y - cat.dy)
+    ) {
+      cat.back = static_cast<uint8_t>(4 + random(3));
+    }
+  }
+
+  bool reversing = cat.back > 0;
+  if (reversing) {
+    cat.back = static_cast<uint8_t>(cat.back - 1);
+  } else {
+    steerCat();
+  }
+
+  const int16_t ox = cat.x;
+  const int16_t oy = cat.y;
+  const int8_t stepX = reversing ? static_cast<int8_t>(-cat.dx) : cat.dx;
+  const int8_t stepY = reversing ? static_cast<int8_t>(-cat.dy) : cat.dy;
+  int16_t nx = static_cast<int16_t>(cat.x + stepX);
+  int16_t ny = static_cast<int16_t>(cat.y + stepY);
+  if (!catFree(nx, ny)) {
+    cat.back = 0;
+    steerCat();
+    nx = static_cast<int16_t>(cat.x + cat.dx);
+    ny = static_cast<int16_t>(cat.y + cat.dy);
+    if (!catFree(nx, ny)) {
+      paintCatBox(ox, oy, false);
+      placeCatInGutter();
+      paintCat();
+      return;
+    }
+  }
+
+  paintCatBox(ox, oy, false);
+  cat.x = nx;
+  cat.y = ny;
+  faceCat();
+  cat.roam = static_cast<uint16_t>(cat.roam + 1);
+  cat.gait = static_cast<uint8_t>(cat.gait + 1);
+  if (cat.gait >= 2) {
+    cat.gait = 0;
+    cat.frame = static_cast<uint8_t>((cat.frame + 1) & 1);
+  }
+  paintCat();
+}
+
 void requestFullRedraw() {
   fullRedrawPending = true;
 }
@@ -893,7 +1322,6 @@ void requestFullRedraw() {
 void requestKeyRedraw(uint8_t index) {
   keyRedrawPending |= static_cast<uint8_t>(1 << index);
 }
-
 
 void serviceRedraw(unsigned long now) {
   if (sleeping) return;
@@ -907,6 +1335,7 @@ void serviceRedraw(unsigned long now) {
     gfx->fillScreen(config.theme.values[THEME_BACKGROUND]);
 
     paintAllStars();
+    paintCat();
     for (uint8_t i = 0; i < TOTAL_APPS; i++) {
       drawKey(i);
       readSerial();
@@ -1218,9 +1647,9 @@ uint16_t stagedThemeCrc() {
 
 uint8_t parseBgEffect(const String &name) {
   if (name == "stars") return BG_EFFECT_STARS;
+  if (name == "cat") return BG_EFFECT_CAT;
   return BG_EFFECT_NONE;
 }
-
 
 void beginTheme(const String &line) {
   const int firstTab = line.indexOf('\t');
@@ -1359,6 +1788,8 @@ void endTheme(const String &line) {
   bgEffect = stagedBgEffect;
   if (bgEffect == BG_EFFECT_STARS) {
     seedStars();
+  } else if (bgEffect == BG_EFFECT_CAT) {
+    seedCat();
   }
 
   pressedVisible = false;
@@ -1906,5 +2337,6 @@ void loop() {
   updatePressedView(now);
   serviceRedraw(now);
   serviceStars(now);
+  serviceCat(now);
   readTouch(now);
 }

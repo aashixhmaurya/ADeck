@@ -760,6 +760,20 @@
   75% { transform: translate(-3px, 1px); }
   100% { transform: translate(0, 0); }
 }
+.theme-tft-cat-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+.theme-tft-cat {
+  position: absolute;
+  width: 5%;
+  aspect-ratio: 1;
+  display: block;
+  image-rendering: pixelated;
+}
 .theme-tft-chrome {
   position: relative;
   z-index: 1;

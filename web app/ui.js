@@ -944,14 +944,124 @@ function renderThemeCards() {
   });
 }
 
+const THEME_CAT_SIDE = [0x8000, 0xc000, 0x6028, 0x707c, 0x387c, 0x18fe, 0x1ffe, 0x0ffe, 0x0ffe, 0x1ffe, 0x1ffc, 0x0a28, 0x0a28, 0x0820, 0x1830, 0x0000];
+const THEME_CAT_DOWN = [0x0240, 0x0660, 0x0ff8, 0x0ff8, 0x0ff8, 0x07f0, 0x07f0, 0x03e0, 0x03e0, 0x03e0, 0x0630, 0x0410, 0x0410, 0x0c18, 0x0000, 0x0000];
+const THEME_CAT_UP = [0x0100, 0x0300, 0x0240, 0x0660, 0x0ff8, 0x0ff8, 0x07f0, 0x07f0, 0x03e0, 0x03e0, 0x0630, 0x0410, 0x0410, 0x0c18, 0x0000, 0x0000];
+
+function themeCatSvgMarkup(face, fur, eye) {
+  let body = THEME_CAT_SIDE;
+  let eyeBits = 0x0028;
+  let mirror = false;
+  if (face === "left") {
+    mirror = true;
+  } else if (face === "down") {
+    body = THEME_CAT_DOWN;
+    eyeBits = 0x0420;
+  } else if (face === "up") {
+    body = THEME_CAT_UP;
+    eyeBits = 0;
+  }
+  let marks = "";
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      const bit = mirror ? 1 << x : 1 << (15 - x);
+      if ((y === 3 || y === 4) && (eyeBits & bit)) {
+        marks += '<rect x="' + x + '" y="' + y + '" width="1" height="1" fill="' + eye + '"/>';
+      } else if (body[y] & bit) {
+        marks += '<rect x="' + x + '" y="' + y + '" width="1" height="1" fill="' + fur + '"/>';
+      }
+    }
+  }
+  return (
+    '<svg class="theme-tft-cat" viewBox="0 0 16 16" shape-rendering="crispEdges" preserveAspectRatio="xMidYMid meet">' +
+    marks +
+    "</svg>"
+  );
+}
+
+function startThemeCatWalk(layer, fur, eye, portrait) {
+  if (layer._catTimer) {
+    clearInterval(layer._catTimer);
+    layer._catTimer = 0;
+  }
+  const path = portrait
+    ? [
+        { x: 3, y: 3 },
+        { x: 47, y: 3 },
+        { x: 47, y: 31 },
+        { x: 3, y: 31 },
+        { x: 3, y: 62 },
+        { x: 47, y: 62 },
+        { x: 47, y: 90 },
+        { x: 92, y: 90 },
+        { x: 92, y: 62 },
+        { x: 47, y: 62 },
+        { x: 47, y: 31 },
+        { x: 92, y: 31 },
+        { x: 92, y: 3 },
+        { x: 3, y: 3 },
+      ]
+    : [
+        { x: 2, y: 3 },
+        { x: 32, y: 3 },
+        { x: 32, y: 48 },
+        { x: 63, y: 48 },
+        { x: 63, y: 90 },
+        { x: 93, y: 90 },
+        { x: 93, y: 48 },
+        { x: 32, y: 48 },
+        { x: 32, y: 90 },
+        { x: 2, y: 90 },
+        { x: 2, y: 3 },
+        { x: 63, y: 3 },
+        { x: 63, y: 48 },
+        { x: 93, y: 48 },
+        { x: 93, y: 3 },
+        { x: 2, y: 3 },
+      ];
+  let i = 0;
+  let t = 0;
+  let face = "right";
+  const paint = (x, y, nextFace) => {
+    if (!layer.firstChild || face !== nextFace) {
+      face = nextFace;
+      layer.innerHTML = themeCatSvgMarkup(nextFace, fur, eye);
+    }
+    const node = layer.firstChild;
+    if (!node) return;
+    node.style.left = x + "%";
+    node.style.top = y + "%";
+  };
+  const step = 0.35;
+  const tick = () => {
+    const a = path[i];
+    const b = path[(i + 1) % path.length];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len = Math.abs(dx) + Math.abs(dy) || 1;
+    t += step;
+    if (t >= len) {
+      t = 0;
+      i = (i + 1) % path.length;
+    }
+    const u = t / len;
+    let nextFace = "right";
+    if (Math.abs(dx) >= Math.abs(dy)) nextFace = dx >= 0 ? "right" : "left";
+    else nextFace = dy >= 0 ? "down" : "up";
+    paint(a.x + dx * u, a.y + dy * u, nextFace);
+  };
+  tick();
+  layer._catTimer = setInterval(tick, 70);
+}
 
 function renderThemeTft(theme) {
   if (!els.themeTft) return;
   const tft = theme.tft || {};
   const profile = activeProfile();
+  const effect = String(theme.bgEffect || "").toLowerCase();
 
   const screenBg =
-    String(theme.bgEffect || "").toLowerCase() === "stars"
+    effect === "stars" || effect === "cat"
       ? tft.background || "#080d0e"
       : profile
         ? profileBackground(profile)
@@ -959,10 +1069,12 @@ function renderThemeTft(theme) {
   els.themeTft.style.background = screenBg;
   els.themeTft.style.setProperty("--tft-line", tft.accent || "#888888");
 
+  els.themeTft.querySelectorAll(".theme-tft-stars, .theme-tft-cat-layer").forEach((node) => {
+    if (node._catTimer) clearInterval(node._catTimer);
+    node.remove();
+  });
 
-  els.themeTft.querySelectorAll(".theme-tft-stars").forEach((node) => node.remove());
-
-  if (String(theme.bgEffect || "").toLowerCase() === "stars") {
+  if (effect === "stars") {
     const layer = document.createElement("div");
     layer.className = "theme-tft-stars";
     layer.setAttribute("aria-hidden", "true");
@@ -982,6 +1094,21 @@ function renderThemeTft(theme) {
       layer.appendChild(dot);
     });
     els.themeTft.insertBefore(layer, els.themeTftGrid || els.themeTft.firstChild);
+  }
+
+  if (effect === "cat") {
+    const layer = document.createElement("div");
+    layer.className = "theme-tft-cat-layer";
+    layer.setAttribute("aria-hidden", "true");
+    const fur = escapeHtml(tft.accent || "#e09040");
+    const eye = escapeHtml(tft.text || "#f3e6d4");
+    els.themeTft.insertBefore(layer, els.themeTftGrid || els.themeTft.firstChild);
+    startThemeCatWalk(
+      layer,
+      fur,
+      eye,
+      isPortraitRotation(normalizeRotation(profile ? profile.rotation : DEFAULT_ROTATION))
+    );
   }
 
   const rotation = normalizeRotation(profile ? profile.rotation : DEFAULT_ROTATION);

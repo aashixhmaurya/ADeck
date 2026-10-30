@@ -845,7 +845,8 @@ class ReliabilityTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["default"], "adeck-classic")
         self.assertEqual(
-            payload["order"], ["adeck-classic", "cyber", "terminal", "retro"]
+            payload["order"],
+            ["adeck-classic", "cat", "cyber", "terminal", "retro"],
         )
         self.assertEqual(
             [theme["id"] for theme in payload["themes"]], payload["order"]
@@ -924,6 +925,7 @@ class ReliabilityTests(unittest.TestCase):
         for raw, expected in (
             ("  CYBER ", "cyber"),
             ("terminal", "terminal"),
+            ("cat", "cat"),
             ("retro", "retro"),
             ("neon-dreams", "adeck-classic"),
             ("", "adeck-classic"),
@@ -1091,8 +1093,9 @@ class ReliabilityTests(unittest.TestCase):
                 thread.join(timeout=2)
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["default"], "adeck-classic")
-        self.assertEqual(len(payload["themes"]), 4)
-        self.assertEqual(payload["themes"][1]["id"], "cyber")
+        self.assertEqual(len(payload["themes"]), 5)
+        self.assertEqual(payload["themes"][1]["id"], "cat")
+        self.assertEqual(payload["themes"][2]["id"], "cyber")
 
     def test_firmware_parses_the_theme_transaction(self):
         firmware = (deck.BASE_DIR / "firmware" / "ADeck" / "ADeck.ino").read_text(encoding="utf-8")
@@ -1116,6 +1119,8 @@ class ReliabilityTests(unittest.TestCase):
             "THEME_SELECTED",
             "THEME_PRESSED",
             "ThemeConfig",
+            "BG_EFFECT_CAT",
+            "serviceCat",
         ):
             self.assertIn(token, firmware, token)
 
@@ -1159,6 +1164,8 @@ class ReliabilityTests(unittest.TestCase):
         self.assertIn(".theme-card", style)
         self.assertIn(".appearance-preview-stage", style)
         self.assertIn(".theme-tft", style)
+        self.assertIn(".theme-tft-cat", style)
+        self.assertIn("theme-tft-cat-layer", script)
         self.assertIn(".grid.is-portrait", style)
         self.assertIn(".theme-tft.is-portrait", style)
 
@@ -1211,10 +1218,13 @@ class ReliabilityTests(unittest.TestCase):
 
     def test_carbon_mist_starfield_bg_effect(self):
         self.assertEqual(deck.theme_bg_effect("adeck-classic"), "stars")
+        self.assertEqual(deck.theme_bg_effect("cat"), "cat")
         self.assertEqual(deck.theme_bg_effect("cyber"), "")
         self.assertEqual(deck.theme_bg_effect("nope"), "stars")
         classic = deck.theme_frame("adeck-classic", "abc123").decode("ascii")
         self.assertTrue(classic.startswith("CFG_THEME_BEGIN\tabc123\t7\tstars\n"))
+        cat = deck.theme_frame("cat", "abc123").decode("ascii")
+        self.assertTrue(cat.startswith("CFG_THEME_BEGIN\tabc123\t7\tcat\n"))
         cyber = deck.theme_frame("cyber", "abc123").decode("ascii")
         self.assertTrue(cyber.startswith("CFG_THEME_BEGIN\tabc123\t7\n"))
 
