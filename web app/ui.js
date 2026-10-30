@@ -604,14 +604,12 @@ function renderSettingsForm() {
   const s = state.settings;
   els.settingTheme.value = s.theme || "light";
   if (els.settingAppearance) els.settingAppearance.value = normalizeAppearance(s.appearance);
-  els.settingLanguage.value = s.language || "en";
   els.settingDeviceName.value = s.deviceName || "";
   els.settingSleep.value = String(s.sleepTimeout ?? "60");
   if (els.settingSleepMode) {
     els.settingSleepMode.value = s.sleepMode === "image" ? "image" : "black";
   }
   updateSleepImageUi();
-  els.settingWifi.value = s.wifiMode || "off";
   if (els.settingAppRelaunch) {
     els.settingAppRelaunch.value =
       s.appRelaunchMode === "minimize" || s.appRelaunchMode === "close"
@@ -852,7 +850,6 @@ function buildConfigObject() {
     settings: {
       theme: state.settings.theme,
       appearance: normalizeAppearance(state.settings.appearance),
-      language: state.settings.language,
       deviceName: state.settings.deviceName,
       sleepTimeout: Number(state.settings.sleepTimeout),
       sleepMode: state.settings.sleepMode === "image" ? "image" : "black",
@@ -862,7 +859,6 @@ function buildConfigObject() {
         activeProfile() ||
         {}
       ).name || null,
-      wifiMode: state.settings.wifiMode,
       appRelaunchMode:
         state.settings.appRelaunchMode === "minimize" ||
         state.settings.appRelaunchMode === "close"
@@ -1281,13 +1277,11 @@ function collectSettingsFromForm() {
   return {
     theme: els.settingTheme.value || "light",
     appearance: normalizeAppearance(els.settingAppearance && els.settingAppearance.value),
-    language: els.settingLanguage.value || "en",
     deviceName: (els.settingDeviceName.value || "ADECK-UNO").trim().slice(0, 24),
     sleepTimeout: els.settingSleep.value || "60",
     sleepMode: els.settingSleepMode && els.settingSleepMode.value === "image" ? "image" : "black",
     sleepImage: String(state.settings.sleepImage || ""),
     defaultProfileId: els.settingDefaultProfile.value || null,
-    wifiMode: els.settingWifi.value || "off",
     appRelaunchMode: ["minimize", "close"].includes(
       els.settingAppRelaunch && els.settingAppRelaunch.value
     )

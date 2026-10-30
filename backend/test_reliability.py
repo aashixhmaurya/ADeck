@@ -38,7 +38,7 @@ def sample_config(active="Main"):
     labels = ("ONE", "TWO", "THREE", "FOUR", "FIVE", "SIX")
     return {
         "active_profile": active,
-        "settings": {"theme": "dark", "wifiMode": "off"},
+        "settings": {"theme": "dark"},
         "profiles": [
             {
                 "id": "main",

@@ -19,7 +19,15 @@
 <body>
   <header class="topbar" role="banner">
     <div class="brand">
-      <div class="brand-mark" aria-hidden="true"></div>
+      <svg class="brand-mark" viewBox="0 0 36 36" width="36" height="36" aria-hidden="true" focusable="false">
+        <rect width="36" height="36" fill="#121210" />
+        <rect x="4" y="4" width="13" height="8" fill="#d4a843" />
+        <rect x="19" y="4" width="13" height="8" fill="#c5c5c3" />
+        <rect x="4" y="14" width="13" height="8" fill="#255a8c" />
+        <rect x="19" y="14" width="13" height="8" fill="#1f6b52" />
+        <rect x="4" y="24" width="13" height="8" fill="#b42318" />
+        <rect x="19" y="24" width="13" height="8" fill="#2c3238" />
+      </svg>
       <div class="brand-text">
         <span class="brand-name">ADECK</span>
         <span class="brand-sub">LOCAL CONFIGURATOR</span>
@@ -325,7 +333,7 @@
       <header class="panel-header">
         <p class="panel-kicker mono muted">PREFERENCES</p>
         <h2 class="panel-title mono">SETTINGS</h2>
-        <p class="panel-lead mono muted">Local preferences. Sleep and Wi‑Fi are saved here until the board supports them.</p>
+        <p class="panel-lead mono muted">Local preferences. Sleep and device options are saved here.</p>
       </header>
 
       <form id="settingsForm" class="settings-form" autocomplete="off">
@@ -348,13 +356,6 @@
               <option value="4">Oled</option>
             </select>
             <span class="field-hint mono muted">Also available from the top bar APPEARANCE control. Colours only.</span>
-          </label>
-          <label class="field">
-            <span class="field-label">LANGUAGE</span>
-            <select id="settingLanguage" name="language">
-              <option value="en">English</option>
-              <option value="de" disabled>Deutsch — SOON</option>
-            </select>
           </label>
         </fieldset>
 
@@ -405,19 +406,6 @@
               <option value="close">Close the same app</option>
             </select>
             <span class="field-hint mono muted">Only Windows apps such as Calculator, Notepad, or VS Code. Git and other shell commands are never toggled.</span>
-          </label>
-        </fieldset>
-
-        <fieldset class="settings-group">
-          <legend class="mono">CONNECTIVITY</legend>
-          <label class="field">
-            <span class="field-label">WIFI MODE</span>
-            <select id="settingWifi" name="wifiMode" disabled>
-              <option value="off">Off</option>
-              <option value="sta">Station — SOON</option>
-              <option value="ap">Access Point — SOON</option>
-            </select>
-            <span class="field-hint mono muted">NOT CONNECTED — needs Python bridge + UNO R4 WiFi</span>
           </label>
         </fieldset>
 

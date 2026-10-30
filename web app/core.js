@@ -248,13 +248,11 @@ const OLED_WEB = {
 const DEFAULT_SETTINGS = {
   theme: "light",
   appearance: DEFAULT_APPEARANCE_ID,
-  language: "en",
   deviceName: "ADECK-UNO",
   sleepTimeout: "60",
   sleepMode: "black",
   sleepImage: "",
   defaultProfileId: null,
-  wifiMode: "off",
   appRelaunchMode: "new",
 };
 
@@ -506,7 +504,6 @@ const els = {
   importJsonFile: $("importJsonFile"),
   closeModalBtn: $("closeModalBtn"),
   settingTheme: $("settingTheme"),
-  settingLanguage: $("settingLanguage"),
   settingDeviceName: $("settingDeviceName"),
   settingSleep: $("settingSleep"),
   settingSleepMode: $("settingSleepMode"),
@@ -515,7 +512,6 @@ const els = {
   sleepImageField: $("sleepImageField"),
   sleepImagePreview: $("sleepImagePreview"),
   settingDefaultProfile: $("settingDefaultProfile"),
-  settingWifi: $("settingWifi"),
   settingAppRelaunch: $("settingAppRelaunch"),
   settingsSaveBtn: $("settingsSaveBtn"),
   settingsResetBtn: $("settingsResetBtn"),
