@@ -20,3 +20,17 @@ desktop.ini
 *~
 .env
 .env.*
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+id_rsa
+id_dsa
+id_ed25519
+*.token
+control.token
+credentials.json
+secrets.json
+auth.json
+*.secret
