@@ -104,7 +104,7 @@ function renderOfflineOverlay() {
 }
 
 function showOfflineOverlay() {
-  if (!els.offlineOverlay) return;
+  if (!els.offlineOverlay || state.backend.exploreOffline) return;
   renderOfflineOverlay();
   els.offlineOverlay.hidden = false;
 }
@@ -119,6 +119,7 @@ function setBackendReachable(ok) {
     const recovered = !backend.reachable;
     backend.reachable = true;
     backend.failures = 0;
+    backend.exploreOffline = false;
     hideOfflineOverlay();
     if (recovered) {
       toast("SERVICE RECONNECTED", "success");
@@ -716,6 +717,12 @@ function wireSystemEvents() {
     els.sysClearOutputBtn.addEventListener("click", () => {
       if (els.sysOutput) els.sysOutput.textContent = "";
       if (els.sysTaskLabel) els.sysTaskLabel.textContent = "Nothing has been run yet.";
+    });
+  }
+  if (els.offlineAnywayBtn) {
+    els.offlineAnywayBtn.addEventListener("click", () => {
+      state.backend.exploreOffline = true;
+      hideOfflineOverlay();
     });
   }
   if (els.offlineRetryBtn) {

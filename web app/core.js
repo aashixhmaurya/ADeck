@@ -279,6 +279,7 @@ const state = {
     status: null,
     system: null,
     busy: false,
+    exploreOffline: false,
   },
 };
 
@@ -558,6 +559,7 @@ const els = {
   offlineMessage: $("offlineMessage"),
   offlineHint: $("offlineHint"),
   offlineStartBtn: $("offlineStartBtn"),
+  offlineAnywayBtn: $("offlineAnywayBtn"),
   offlineRetryBtn: $("offlineRetryBtn"),
   appDialog: $("appDialog"),
   dialogKicker: $("dialogKicker"),
