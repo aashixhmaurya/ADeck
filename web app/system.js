@@ -723,6 +723,8 @@ function wireSystemEvents() {
     els.offlineAnywayBtn.addEventListener("click", () => {
       state.backend.exploreOffline = true;
       hideOfflineOverlay();
+      applyActiveDeckTheme();
+      renderAll();
     });
   }
   if (els.offlineRetryBtn) {

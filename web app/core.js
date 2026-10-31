@@ -574,18 +574,47 @@ const els = {
 
 let dialogState = null;
 
+function hostedExplore() {
+  return !["127.0.0.1", "localhost"].includes(window.location.hostname);
+}
+
 function seed() {
-  const dev = makeProfile("Dev Mode");
-  dev.slots[0] = { index: 0, label: "CODE", command: "code", color: "#255a8c" };
-  dev.slots[1] = { index: 1, label: "TERM", command: "wt", color: "#2c3238" };
-  dev.slots[2] = { index: 2, label: "GIT", command: "git status", color: "#1f6b52" };
-  dev.slots[3] = { index: 3, label: "EXPLORER", command: "explorer .", color: "#c5c5c3" };
-  dev.slots[4] = { index: 4, label: "NOTEPAD", command: "notepad", color: "#b42318" };
-  dev.slots[5] = { index: 5, label: "CALC", command: "calc", color: "#0a0a0a" };
-  state.profiles.push(dev);
-  state.profiles.push(makeProfile("Gaming"));
-  state.profiles.push(makeProfile("Media"));
-  state.activeProfileId = dev.id;
+  const demo = hostedExplore();
+  const first = makeProfile(demo ? "Workspace" : "Dev Mode");
+  if (demo) {
+    first.theme = "bee";
+    first.background = "#1c1608";
+    first.slots[0] = { index: 0, label: "KICAD", command: "kicad", color: "#255a8c" };
+    first.slots[1] = { index: 1, label: "EXPLORER", command: "explorer", color: "#c5c5c3" };
+    first.slots[2] = { index: 2, label: "GITHUB", command: "github", color: "#6e40c9" };
+    first.slots[3] = { index: 3, label: "NOTEPAD", command: "notepad", color: "#8ab4f8" };
+    first.slots[4] = { index: 4, label: "VS CODE", command: "code", color: "#0078d4" };
+    first.slots[5] = { index: 5, label: "NVIDIA", command: "nvidia", color: "#76b900" };
+  } else {
+    first.slots[0] = { index: 0, label: "CODE", command: "code", color: "#255a8c" };
+    first.slots[1] = { index: 1, label: "TERM", command: "wt", color: "#2c3238" };
+    first.slots[2] = { index: 2, label: "GIT", command: "git status", color: "#1f6b52" };
+    first.slots[3] = { index: 3, label: "EXPLORER", command: "explorer .", color: "#c5c5c3" };
+    first.slots[4] = { index: 4, label: "NOTEPAD", command: "notepad", color: "#b42318" };
+    first.slots[5] = { index: 5, label: "CALC", command: "calc", color: "#0a0a0a" };
+  }
+  state.profiles.push(first);
+  const gaming = makeProfile("Gaming");
+  if (demo) {
+    gaming.theme = "cat";
+    gaming.slots[0] = { index: 0, label: "STEAM", command: "steam", color: "#171a21" };
+    gaming.slots[1] = { index: 1, label: "DISCORD", command: "discord", color: "#5865f2" };
+    gaming.slots[2] = { index: 2, label: "SPOTIFY", command: "spotify", color: "#1db954" };
+  }
+  state.profiles.push(gaming);
+  const media = makeProfile("Media");
+  if (demo) {
+    media.theme = "adeck-classic";
+    media.slots[0] = { index: 0, label: "PHOTOS", command: "photos", color: "#c45c12" };
+    media.slots[1] = { index: 1, label: "FILMS", command: "films", color: "#b42318" };
+  }
+  state.profiles.push(media);
+  state.activeProfileId = first.id;
   state.activeSlotIndex = 0;
 }
 
@@ -808,6 +837,70 @@ function refreshSlotUI() {
 
 const DEFAULT_DECK_THEME = "adeck-classic";
 const THEMES_CACHE_KEY = "adeck.themes.v4";
+const BUILTIN_THEMES = {
+  ok: true,
+  default: "adeck-classic",
+  order: ["adeck-classic", "cat", "bee"],
+  tftKeys: [
+    "background",
+    "text",
+    "textMuted",
+    "accent",
+    "accentSecondary",
+    "selected",
+    "pressed",
+  ],
+  themes: [
+    {
+      id: "adeck-classic",
+      name: "Space",
+      short: "Space",
+      description: "Dark display with slow drifting stars behind colourful app keys. Calm deep-space background.",
+      bgEffect: "stars",
+      tft: {
+        background: "#080d0e",
+        text: "#e7eeee",
+        textMuted: "#445355",
+        accent: "#e32636",
+        accentSecondary: "#3d4a4c",
+        selected: "#ffffff",
+        pressed: "#2a1216",
+      },
+    },
+    {
+      id: "cat",
+      name: "Cat",
+      short: "Cat",
+      description: "A cat wanders the empty space around the keys.",
+      bgEffect: "cat",
+      tft: {
+        background: "#120e0c",
+        text: "#f3e6d4",
+        textMuted: "#6a5340",
+        accent: "#e09040",
+        accentSecondary: "#c45c2a",
+        selected: "#ffe0b0",
+        pressed: "#2a1810",
+      },
+    },
+    {
+      id: "bee",
+      name: "Bee",
+      short: "Bee",
+      description: "A bee flies the empty space, then settles on an app icon.",
+      bgEffect: "bee",
+      tft: {
+        background: "#1c1608",
+        text: "#fff3c8",
+        textMuted: "#6a5830",
+        accent: "#f0c028",
+        accentSecondary: "#3a2810",
+        selected: "#ffe080",
+        pressed: "#2a200c",
+      },
+    },
+  ],
+};
 
 let themeRegistry = null;
 let appliedThemeVars = [];
@@ -867,7 +960,8 @@ async function loadThemes() {
       return true;
     }
   } catch (err) {}
-  return false;
+  themeRegistry = BUILTIN_THEMES;
+  return true;
 }
 
 function themeVarRoots() {
