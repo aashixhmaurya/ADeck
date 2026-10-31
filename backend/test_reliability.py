@@ -846,7 +846,7 @@ class ReliabilityTests(unittest.TestCase):
         self.assertEqual(payload["default"], "adeck-classic")
         self.assertEqual(
             payload["order"],
-            ["adeck-classic", "cat", "cyber", "terminal", "retro"],
+            ["adeck-classic", "cat", "bee"],
         )
         self.assertEqual(
             [theme["id"] for theme in payload["themes"]], payload["order"]
@@ -919,14 +919,15 @@ class ReliabilityTests(unittest.TestCase):
 
         self.assertEqual(normalized["profiles"][0]["theme"], "adeck-classic")
 
-        config["profiles"][0]["theme"] = "cyber"
-        self.assertEqual(deck.normalize_config(config)["profiles"][0]["theme"], "cyber")
+        config["profiles"][0]["theme"] = "bee"
+        self.assertEqual(deck.normalize_config(config)["profiles"][0]["theme"], "bee")
 
         for raw, expected in (
-            ("  CYBER ", "cyber"),
-            ("terminal", "terminal"),
+            ("  BEE ", "bee"),
             ("cat", "cat"),
-            ("retro", "retro"),
+            ("cyber", "adeck-classic"),
+            ("terminal", "adeck-classic"),
+            ("retro", "adeck-classic"),
             ("neon-dreams", "adeck-classic"),
             ("", "adeck-classic"),
             (7, "adeck-classic"),
@@ -947,46 +948,46 @@ class ReliabilityTests(unittest.TestCase):
             for i in range(6)
         ]
         config["profiles"] = [
-            {"id": "a", "name": "Main", "theme": "cyber", "buttons": buttons},
-            {"id": "b", "name": "Work", "theme": "terminal", "buttons": buttons},
+            {"id": "a", "name": "Main", "theme": "bee", "buttons": buttons},
+            {"id": "b", "name": "Work", "theme": "cat", "buttons": buttons},
         ]
         config["active_profile"] = "Main"
         normalized = deck.normalize_config(config)
-        self.assertEqual(deck.active_theme_id(normalized), "cyber")
+        self.assertEqual(deck.active_theme_id(normalized), "bee")
         normalized["active_profile"] = "Work"
-        self.assertEqual(deck.active_theme_id(normalized), "terminal")
+        self.assertEqual(deck.active_theme_id(normalized), "cat")
 
         self.assertEqual(deck.active_theme_id(None), "adeck-classic")
         self.assertEqual(deck.active_theme_id({"profiles": []}), "adeck-classic")
 
     def test_theme_frame_shape_and_crc(self):
-        frame = deck.theme_frame("cyber", "abc123").decode("ascii")
+        frame = deck.theme_frame("bee", "abc123").decode("ascii")
         lines = frame.splitlines()
-        self.assertEqual(lines[0], "CFG_THEME_BEGIN\tabc123\t7")
+        self.assertEqual(lines[0], "CFG_THEME_BEGIN\tabc123\t7\tbee")
         self.assertEqual(lines[-1][: len("CFG_THEME_END\tabc123\t")], "CFG_THEME_END\tabc123\t")
         self.assertTrue(frame.endswith("\n"))
 
-        panel = deck.THEMES["cyber"]["tft"]
+        panel = deck.THEMES["bee"]["tft"]
         for index, key in enumerate(deck.TFT_THEME_KEYS):
             self.assertIn(
                 f"CFG_THEME_VALUE\tabc123\t{index}\t{panel[key].upper()}", lines
             )
         self.assertEqual(len(lines), 9)
 
-        values = deck.theme_values("cyber")
+        values = deck.theme_values("bee")
         self.assertEqual(values, [deck._hex_rgb_tuple(panel[key]) for key in deck.TFT_THEME_KEYS])
         expected = f"{deck.theme_crc(values):04X}"
         self.assertEqual(lines[-1], f"CFG_THEME_END\tabc123\t{expected}")
 
         self.assertNotEqual(
-            deck.theme_frame("cyber", "abc123"), deck.theme_frame("retro", "abc123")
+            deck.theme_frame("bee", "abc123"), deck.theme_frame("cat", "abc123")
         )
 
     def _theme_config(self):
         config = sample_config()
         config["profiles"][0]["buttons"][0]["kind"] = "app"
         config["profiles"][0]["buttons"][0]["command"] = "notepad.exe"
-        config["profiles"][0]["theme"] = "cyber"
+        config["profiles"][0]["theme"] = "bee"
         return deck.normalize_config(config)
 
     def test_theme_reaches_a_board_that_announced_it(self):
@@ -1000,14 +1001,14 @@ class ReliabilityTests(unittest.TestCase):
         device._sync(normalized, "abc123")
 
         self.assertEqual(connection.writes[0], deck.config_frame(normalized, "abc123"))
-        self.assertEqual(connection.writes[1], deck.theme_frame("cyber", "abc123"))
+        self.assertEqual(connection.writes[1], deck.theme_frame("bee", "abc123"))
 
         self.assertTrue(connection.writes[2].startswith(b"CFG_ICON_BEGIN\tabc123\t0\t32\n"))
-        self.assertEqual(device.status()["theme"], "cyber")
+        self.assertEqual(device.status()["theme"], "bee")
         self.assertTrue(device.status()["last_sync"])
 
-        background = deck.theme_background("cyber")
-        self.assertEqual(background, "#05070e")
+        background = deck.theme_background("bee")
+        self.assertEqual(background, "#1c1608")
         buttons = deck.active_buttons(normalized)
         expected = deck.app_icon_frames(buttons, "abc123", background)
         self.assertTrue(expected)
@@ -1049,7 +1050,7 @@ class ReliabilityTests(unittest.TestCase):
         device._sync(normalized, "abc123")
 
         self.assertEqual(connection.theme_frames, 2)
-        self.assertEqual(device.status()["theme"], "cyber")
+        self.assertEqual(device.status()["theme"], "bee")
         self.assertTrue(device.status()["last_sync"])
 
     def test_a_theme_that_never_lands_leaves_the_workspace_alone(self):
@@ -1093,9 +1094,9 @@ class ReliabilityTests(unittest.TestCase):
                 thread.join(timeout=2)
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["default"], "adeck-classic")
-        self.assertEqual(len(payload["themes"]), 5)
+        self.assertEqual(len(payload["themes"]), 3)
         self.assertEqual(payload["themes"][1]["id"], "cat")
-        self.assertEqual(payload["themes"][2]["id"], "cyber")
+        self.assertEqual(payload["themes"][2]["id"], "bee")
 
     def test_firmware_parses_the_theme_transaction(self):
         firmware = (deck.BASE_DIR / "firmware" / "ADeck" / "ADeck.ino").read_text(encoding="utf-8")
@@ -1121,6 +1122,8 @@ class ReliabilityTests(unittest.TestCase):
             "ThemeConfig",
             "BG_EFFECT_CAT",
             "serviceCat",
+            "BG_EFFECT_BEE",
+            "serviceBee",
         ):
             self.assertIn(token, firmware, token)
 
@@ -1166,6 +1169,8 @@ class ReliabilityTests(unittest.TestCase):
         self.assertIn(".theme-tft", style)
         self.assertIn(".theme-tft-cat", style)
         self.assertIn("theme-tft-cat-layer", script)
+        self.assertIn(".theme-tft-bee", style)
+        self.assertIn("theme-tft-bee-layer", script)
         self.assertIn(".grid.is-portrait", style)
         self.assertIn(".theme-tft.is-portrait", style)
 
@@ -1176,21 +1181,21 @@ class ReliabilityTests(unittest.TestCase):
         self.assertEqual(deck.active_background(normalized), classic_bg)
 
         config = sample_config()
-        config["profiles"][0]["theme"] = "cyber"
+        config["profiles"][0]["theme"] = "bee"
         config["profiles"][0]["background"] = "#112233"
         normalized = deck.normalize_config(config)
         self.assertEqual(normalized["profiles"][0]["background"], "#112233")
         self.assertEqual(deck.active_background(normalized), "#112233")
-        self.assertEqual(deck.theme_background("cyber", "#112233"), "#112233")
+        self.assertEqual(deck.theme_background("bee", "#112233"), "#112233")
 
-        values = deck.theme_values("cyber", background="#112233")
+        values = deck.theme_values("bee", background="#112233")
         self.assertEqual(values[0], (0x11, 0x22, 0x33))
 
         self.assertEqual(
-            values[1], deck._hex_rgb_tuple(deck.THEMES["cyber"]["tft"]["text"])
+            values[1], deck._hex_rgb_tuple(deck.THEMES["bee"]["tft"]["text"])
         )
 
-        frame = deck.theme_frame("cyber", "bg1", background="#112233").decode("ascii")
+        frame = deck.theme_frame("bee", "bg1", background="#112233").decode("ascii")
         self.assertIn("CFG_THEME_VALUE\tbg1\t0\t#112233", frame)
 
         with self.assertRaises(ValueError):
@@ -1219,14 +1224,14 @@ class ReliabilityTests(unittest.TestCase):
     def test_carbon_mist_starfield_bg_effect(self):
         self.assertEqual(deck.theme_bg_effect("adeck-classic"), "stars")
         self.assertEqual(deck.theme_bg_effect("cat"), "cat")
-        self.assertEqual(deck.theme_bg_effect("cyber"), "")
+        self.assertEqual(deck.theme_bg_effect("bee"), "bee")
         self.assertEqual(deck.theme_bg_effect("nope"), "stars")
         classic = deck.theme_frame("adeck-classic", "abc123").decode("ascii")
         self.assertTrue(classic.startswith("CFG_THEME_BEGIN\tabc123\t7\tstars\n"))
         cat = deck.theme_frame("cat", "abc123").decode("ascii")
         self.assertTrue(cat.startswith("CFG_THEME_BEGIN\tabc123\t7\tcat\n"))
-        cyber = deck.theme_frame("cyber", "abc123").decode("ascii")
-        self.assertTrue(cyber.startswith("CFG_THEME_BEGIN\tabc123\t7\n"))
+        bee = deck.theme_frame("bee", "abc123").decode("ascii")
+        self.assertTrue(bee.startswith("CFG_THEME_BEGIN\tabc123\t7\tbee\n"))
 
     def test_profile_rotation_defaults_and_cycle(self):
         config = sample_config()
@@ -1261,7 +1266,7 @@ class ReliabilityTests(unittest.TestCase):
         device._sync(normalized, "abc123")
 
         self.assertEqual(connection.writes[0], deck.config_frame(normalized, "abc123"))
-        self.assertEqual(connection.writes[1], deck.theme_frame("cyber", "abc123"))
+        self.assertEqual(connection.writes[1], deck.theme_frame("bee", "abc123"))
         self.assertEqual(connection.writes[2], deck.rotation_frame(0, "abc123"))
         self.assertTrue(connection.writes[3].startswith(b"CFG_ICON_BEGIN\tabc123\t0\t32\n"))
         self.assertEqual(device.status()["rotation"], 0)

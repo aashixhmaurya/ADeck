@@ -1054,6 +1054,134 @@ function startThemeCatWalk(layer, fur, eye, portrait) {
   layer._catTimer = setInterval(tick, 70);
 }
 
+const THEME_BEE_BODY = [0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x0000ff00, 0x0007ffc0, 0x000fffe0, 0x001f9fe0, 0x003893f0, 0x003093f8, 0x003049f8, 0x003fc9f8, 0x001fc9f0, 0x000fcfe0, 0x001fffc0, 0x001fff00, 0x000ffe00, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000];
+const THEME_BEE_STRIPE = [0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00006000, 0x00056c00, 0x00086c00, 0x00073600, 0x00003600, 0x00003600, 0x00003000, 0x00000010, 0x00200050, 0x00500088, 0x00880208, 0x01040400, 0x00000000, 0x00000000, 0x00000000];
+const THEME_BEE_WING = [
+  [0x00000000, 0x00000000, 0x001e01e0, 0x003f03f0, 0x007f87f8, 0x007f87f8, 0x003f03f0, 0x001e01e0, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000],
+  [0x00000000, 0x00000000, 0x000e00e0, 0x003f83f8, 0x007fc7fc, 0x007fc7fc, 0x003f83f8, 0x000f01e0, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000],
+];
+
+function themeBeeSvgMarkup(face, pose, gold, dark, wing) {
+  const mirror = face === "left";
+  let marks = "";
+  for (let y = 0; y < 26; y++) {
+    for (let x = 0; x < 32; x++) {
+      const bit = (mirror ? 1 << x : 1 << (31 - x)) >>> 0;
+      let fill = "";
+      if (THEME_BEE_STRIPE[y] & bit) fill = dark;
+      else if (THEME_BEE_WING[pose][y] & bit) fill = wing;
+      else if (THEME_BEE_BODY[y] & bit) fill = gold;
+      if (fill) {
+        marks += '<rect x="' + x + '" y="' + y + '" width="1" height="1" fill="' + fill + '"/>';
+      }
+    }
+  }
+  return (
+    '<svg class="theme-tft-bee" viewBox="0 0 32 26" shape-rendering="crispEdges" preserveAspectRatio="xMidYMid meet">' +
+    marks +
+    "</svg>"
+  );
+}
+
+function startThemeBeeFly(layer, gold, dark, wing, portrait) {
+  if (layer._beeTimer) {
+    clearInterval(layer._beeTimer);
+    layer._beeTimer = 0;
+  }
+  const keys = portrait
+    ? [
+        { x: 16, y: 2 },
+        { x: 62, y: 2 },
+        { x: 16, y: 30 },
+        { x: 62, y: 30 },
+        { x: 16, y: 60 },
+        { x: 62, y: 60 },
+      ]
+    : [
+        { x: 14, y: 3 },
+        { x: 45, y: 3 },
+        { x: 76, y: 3 },
+        { x: 14, y: 49 },
+        { x: 45, y: 49 },
+        { x: 76, y: 49 },
+      ];
+  const air = portrait
+    ? [
+        { x: 38, y: 3 },
+        { x: 4, y: 50 },
+        { x: 88, y: 50 },
+      ]
+    : [
+        { x: 48, y: 3 },
+        { x: 3, y: 46 },
+        { x: 48, y: 96 },
+      ];
+  let from = air[0];
+  let to = keys[0];
+  let t = 0;
+  let sit = 0;
+  let pose = 0;
+  let face = "right";
+  let keyI = 0;
+  const paint = (x, y, nextFace, nextPose) => {
+    if (!layer.firstChild || face !== nextFace || pose !== nextPose) {
+      face = nextFace;
+      pose = nextPose;
+      layer.innerHTML = themeBeeSvgMarkup(nextFace, nextPose, gold, dark, wing);
+    }
+    const node = layer.firstChild;
+    if (!node) return;
+    node.style.left = x + "%";
+    node.style.top = y + "%";
+  };
+  const pickNext = (landed) => {
+    from = { x: to.x, y: to.y };
+    t = 0;
+    if (landed && Math.random() < 0.32) {
+      to = air[(keyI + 1) % air.length];
+      return;
+    }
+    keyI = (keyI + 1 + (keys.length > 2 ? Math.floor(Math.random() * (keys.length - 1)) : 0)) % keys.length;
+    to = keys[keyI];
+  };
+  const tick = () => {
+    if (sit > 0) {
+      sit -= 1;
+      if (!sit) pickNext(true);
+      paint(to.x, to.y, face, sit ? pose ^ ((sit % 4) === 0 ? 1 : 0) : pose);
+      return;
+    }
+    const dx = to.x - from.x;
+    const dy = to.y - from.y;
+    const len = Math.abs(dx) + Math.abs(dy) || 1;
+    t += 0.9;
+    if (t >= len) {
+      const onKey = keys.some((k) => k.x === to.x && k.y === to.y);
+      if (onKey) {
+        sit = 18 + Math.floor(Math.random() * 10);
+        paint(to.x, to.y, dx >= 0 ? "right" : "left", 0);
+        return;
+      }
+      pickNext(false);
+      return;
+    }
+    const u = t / len;
+    let x = from.x + dx * u;
+    let y = from.y + dy * u;
+    if (len > 18) {
+      const wob = Math.sin(t * 0.25) * 0.35;
+      if (Math.abs(dx) >= Math.abs(dy)) y += wob;
+      else x += wob;
+    }
+    let nextFace = "right";
+    if (Math.abs(dx) >= Math.abs(dy)) nextFace = dx >= 0 ? "right" : "left";
+    else nextFace = dx >= 0 ? "right" : "left";
+    paint(x, y, nextFace, t % 4 < 2 ? 0 : 1);
+  };
+  tick();
+  layer._beeTimer = setInterval(tick, 60);
+}
+
 function renderThemeTft(theme) {
   if (!els.themeTft) return;
   const tft = theme.tft || {};
@@ -1061,7 +1189,7 @@ function renderThemeTft(theme) {
   const effect = String(theme.bgEffect || "").toLowerCase();
 
   const screenBg =
-    effect === "stars" || effect === "cat"
+    effect === "stars" || effect === "cat" || effect === "bee"
       ? tft.background || "#080d0e"
       : profile
         ? profileBackground(profile)
@@ -1069,8 +1197,9 @@ function renderThemeTft(theme) {
   els.themeTft.style.background = screenBg;
   els.themeTft.style.setProperty("--tft-line", tft.accent || "#888888");
 
-  els.themeTft.querySelectorAll(".theme-tft-stars, .theme-tft-cat-layer").forEach((node) => {
+  els.themeTft.querySelectorAll(".theme-tft-stars, .theme-tft-cat-layer, .theme-tft-bee-layer").forEach((node) => {
     if (node._catTimer) clearInterval(node._catTimer);
+    if (node._beeTimer) clearInterval(node._beeTimer);
     node.remove();
   });
 
@@ -1107,6 +1236,23 @@ function renderThemeTft(theme) {
       layer,
       fur,
       eye,
+      isPortraitRotation(normalizeRotation(profile ? profile.rotation : DEFAULT_ROTATION))
+    );
+  }
+
+  if (effect === "bee") {
+    const layer = document.createElement("div");
+    layer.className = "theme-tft-bee-layer";
+    layer.setAttribute("aria-hidden", "true");
+    const gold = escapeHtml(tft.accent || "#f0c028");
+    const dark = escapeHtml(tft.accentSecondary || "#3a2810");
+    const wing = escapeHtml(tft.text || "#fff3c8");
+    els.themeTft.appendChild(layer);
+    startThemeBeeFly(
+      layer,
+      gold,
+      dark,
+      wing,
       isPortraitRotation(normalizeRotation(profile ? profile.rotation : DEFAULT_ROTATION))
     );
   }

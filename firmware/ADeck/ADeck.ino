@@ -76,6 +76,7 @@ const uint8_t THEME_COUNT = 7;
 const uint8_t BG_EFFECT_NONE = 0;
 const uint8_t BG_EFFECT_STARS = 1;
 const uint8_t BG_EFFECT_CAT = 2;
+const uint8_t BG_EFFECT_BEE = 3;
 
 const uint8_t STAR_COUNT = 16;
 const uint8_t STAR_SIZE = 2;
@@ -96,6 +97,40 @@ const uint16_t CAT_DOWN[2][16] = {
 const uint16_t CAT_UP[2][16] = {
   { 0x0100, 0x0300, 0x0240, 0x0660, 0x0FF8, 0x0FF8, 0x07F0, 0x07F0, 0x03E0, 0x03E0, 0x0630, 0x0410, 0x0410, 0x0C18, 0x0000, 0x0000 },
   { 0x0200, 0x0300, 0x0240, 0x0660, 0x0FF8, 0x0FF8, 0x07F0, 0x07F0, 0x03E0, 0x05D0, 0x0550, 0x0220, 0x0630, 0x0000, 0x0000, 0x0000 }
+};
+
+const uint8_t BEE_W = 32;
+const uint8_t BEE_H = 26;
+const unsigned long BEE_FRAME_MS = 60;
+const uint32_t BEE_BODY[26] = {
+  0x00000000ul, 0x00000000ul, 0x00000000ul, 0x00000000ul, 0x00000000ul, 0x00000000ul,
+  0x00000000ul, 0x00000000ul, 0x0000FF00ul, 0x0007FFC0ul, 0x000FFFE0ul, 0x001F9FE0ul,
+  0x003893F0ul, 0x003093F8ul, 0x003049F8ul, 0x003FC9F8ul, 0x001FC9F0ul, 0x000FCFE0ul,
+  0x001FFFC0ul, 0x001FFF00ul, 0x000FFE00ul, 0x00000000ul, 0x00000000ul, 0x00000000ul,
+  0x00000000ul, 0x00000000ul
+};
+const uint32_t BEE_STRIPE[26] = {
+  0x00000000ul, 0x00000000ul, 0x00000000ul, 0x00000000ul, 0x00000000ul, 0x00000000ul,
+  0x00000000ul, 0x00000000ul, 0x00000000ul, 0x00000000ul, 0x00000000ul, 0x00006000ul,
+  0x00056C00ul, 0x00086C00ul, 0x00073600ul, 0x00003600ul, 0x00003600ul, 0x00003000ul,
+  0x00000010ul, 0x00200050ul, 0x00500088ul, 0x00880208ul, 0x01040400ul, 0x00000000ul,
+  0x00000000ul, 0x00000000ul
+};
+const uint32_t BEE_WING[2][26] = {
+  {
+    0x00000000ul, 0x00000000ul, 0x001E01E0ul, 0x003F03F0ul, 0x007F87F8ul, 0x007F87F8ul,
+    0x003F03F0ul, 0x001E01E0ul, 0x00000000ul, 0x00000000ul, 0x00000000ul, 0x00000000ul,
+    0x00000000ul, 0x00000000ul, 0x00000000ul, 0x00000000ul, 0x00000000ul, 0x00000000ul,
+    0x00000000ul, 0x00000000ul, 0x00000000ul, 0x00000000ul, 0x00000000ul, 0x00000000ul,
+    0x00000000ul, 0x00000000ul
+  },
+  {
+    0x00000000ul, 0x00000000ul, 0x000E00E0ul, 0x003F83F8ul, 0x007FC7FCul, 0x007FC7FCul,
+    0x003F83F8ul, 0x000F01E0ul, 0x00000000ul, 0x00000000ul, 0x00000000ul, 0x00000000ul,
+    0x00000000ul, 0x00000000ul, 0x00000000ul, 0x00000000ul, 0x00000000ul, 0x00000000ul,
+    0x00000000ul, 0x00000000ul, 0x00000000ul, 0x00000000ul, 0x00000000ul, 0x00000000ul,
+    0x00000000ul, 0x00000000ul
+  }
 };
 
 const uint8_t SELECTED_MIX = 100;
@@ -128,6 +163,22 @@ struct CatLane {
   int16_t at;
   int16_t lo;
   int16_t hi;
+};
+
+struct BeeFly {
+  int16_t x;
+  int16_t y;
+  int16_t tx;
+  int16_t ty;
+  int8_t dx;
+  int8_t dy;
+  uint8_t frame;
+  uint8_t facing;
+  uint8_t gait;
+  uint8_t sit;
+  uint8_t slot;
+  uint8_t wobble;
+  uint8_t hover;
 };
 
 CatLane catLanes[8];
@@ -181,6 +232,13 @@ StarDot stars[STAR_COUNT];
 unsigned long nextStarFrame = 0;
 CatWalk cat;
 unsigned long nextCatFrame = 0;
+BeeFly bee;
+unsigned long nextBeeFrame = 0;
+bool beePainted = false;
+int16_t beeAtX = 0;
+int16_t beeAtY = 0;
+uint8_t beeAtFrame = 0;
+uint8_t beeAtFacing = 1;
 uint32_t activeGeneration = 0;
 int8_t activeRecord = -1;
 uint16_t slotIcons[TOTAL_APPS][ICON_SIZE * ICON_SIZE];
@@ -474,6 +532,8 @@ void applyDisplayRotation(uint8_t rotation) {
     seedStars();
   } else if (bgEffect == BG_EFFECT_CAT) {
     seedCat();
+  } else if (bgEffect == BG_EFFECT_BEE) {
+    seedBee();
   }
 }
 
@@ -1315,6 +1375,322 @@ void serviceCat(unsigned long now) {
   paintCat();
 }
 
+uint8_t beeOverlapMask(int x, int y) {
+  uint8_t mask = 0;
+  const int x2 = x + BEE_W;
+  const int y2 = y + BEE_H;
+  for (uint8_t i = 0; i < TOTAL_APPS; i++) {
+    if (
+      x < slotX[i] + KEY_W && x2 > slotX[i] &&
+      y < slotY[i] + KEY_H && y2 > slotY[i]
+    ) {
+      mask = static_cast<uint8_t>(mask | (1 << i));
+    }
+  }
+  return mask;
+}
+
+bool beeHitsKey(int x, int y) {
+  return beeOverlapMask(x, y) != 0;
+}
+
+void beeFace() {
+  if (bee.dx > 0) bee.facing = 1;
+  else if (bee.dx < 0) bee.facing = 0;
+}
+
+int16_t beeManhattan() {
+  int16_t dx = static_cast<int16_t>(bee.x - bee.tx);
+  int16_t dy = static_cast<int16_t>(bee.y - bee.ty);
+  if (dx < 0) dx = static_cast<int16_t>(-dx);
+  if (dy < 0) dy = static_cast<int16_t>(-dy);
+  return static_cast<int16_t>(dx + dy);
+}
+
+void beePerchOn(uint8_t index, int16_t &x, int16_t &y) {
+  const int ix = slotX[index] + (KEY_W - ICON_DRAW) / 2;
+  const int span = ICON_DRAW > BEE_W + 8 ? ICON_DRAW - BEE_W - 8 : 1;
+  int px = ix + 4 + static_cast<int>(random(span));
+  int py = slotY[index] - BEE_H + 6;
+  if (px < 0) px = 0;
+  if (px > screenW - BEE_W) px = screenW - BEE_W;
+  if (py < 0) py = 0;
+  if (py > screenH - BEE_H) py = screenH - BEE_H;
+  x = static_cast<int16_t>(px);
+  y = static_cast<int16_t>(py);
+}
+
+void pickBeeAir() {
+  for (uint8_t t = 0; t < 36; t++) {
+    const int16_t x = static_cast<int16_t>(random(screenW - BEE_W));
+    const int16_t y = static_cast<int16_t>(random(screenH - BEE_H));
+    if (!beeHitsKey(x, y)) {
+      bee.tx = x;
+      bee.ty = y;
+      return;
+    }
+  }
+  bee.tx = static_cast<int16_t>(2 + random(screenW > BEE_W + 4 ? screenW - BEE_W - 2 : 1));
+  bee.ty = 2;
+}
+
+void pickBeeTarget() {
+  if (bee.slot != 255 && random(100) < 30) {
+    pickBeeAir();
+    bee.slot = 255;
+    return;
+  }
+  uint8_t n = static_cast<uint8_t>(random(TOTAL_APPS));
+  if (n == bee.slot) {
+    n = static_cast<uint8_t>((n + 1 + random(TOTAL_APPS - 1)) % TOTAL_APPS);
+  }
+  bee.slot = n;
+  beePerchOn(n, bee.tx, bee.ty);
+}
+
+void beeSteer() {
+  const int16_t ax = static_cast<int16_t>(bee.tx - bee.x);
+  const int16_t ay = static_cast<int16_t>(bee.ty - bee.y);
+  const int8_t sx = ax > 0 ? 1 : (ax < 0 ? -1 : 0);
+  const int8_t sy = ay > 0 ? 1 : (ay < 0 ? -1 : 0);
+  int16_t adx = ax < 0 ? static_cast<int16_t>(-ax) : ax;
+  int16_t ady = ay < 0 ? static_cast<int16_t>(-ay) : ay;
+  bee.dx = sx;
+  bee.dy = sy;
+  if (adx > ady * 2) bee.dy = 0;
+  else if (ady > adx * 2) bee.dx = 0;
+  beeFace();
+}
+
+int8_t beeSlotAt(int px, int py) {
+  for (uint8_t i = 0; i < TOTAL_APPS; i++) {
+    if (
+      px >= slotX[i] && px < slotX[i] + KEY_W &&
+      py >= slotY[i] && py < slotY[i] + KEY_H
+    ) {
+      return static_cast<int8_t>(i);
+    }
+  }
+  return -1;
+}
+
+bool beeInkAt(uint8_t dx, uint8_t dy, uint8_t pose, uint8_t facing) {
+  const uint8_t srcX = facing == 0
+    ? static_cast<uint8_t>(BEE_W - 1 - dx)
+    : dx;
+  const uint32_t mask = 1ul << (BEE_W - 1 - srcX);
+  return (BEE_STRIPE[dy] & mask) ||
+    (BEE_WING[pose][dy] & mask) ||
+    (BEE_BODY[dy] & mask);
+}
+
+void beeIconOrigin(uint8_t index, int &ix, int &iy) {
+  ix = slotX[index] + (KEY_W - ICON_DRAW) / 2 + ICON_INSET;
+  iy = slotY[index] + (KEY_H - (ICON_DRAW + ICON_GAP + TEXT_H)) / 2 + ICON_INSET;
+}
+
+int beeLabelTop(uint8_t index) {
+  if (!config.slots[index].label[0] || !slotHasIcon[index]) {
+    return slotY[index] + (KEY_H - TEXT_H) / 2;
+  }
+  return slotY[index] + (KEY_H - (ICON_DRAW + ICON_GAP + TEXT_H)) / 2 + ICON_DRAW + ICON_GAP;
+}
+
+uint16_t beeUnderColor(int px, int py, int8_t index) {
+  const uint16_t bg = config.theme.values[THEME_BACKGROUND];
+  if (index < 0 || !slotHasIcon[index]) return bg;
+  int ix = 0;
+  int iy = 0;
+  beeIconOrigin(index, ix, iy);
+  const int lx = px - ix;
+  const int ly = py - iy;
+  if (lx < 0 || ly < 0 || lx >= ICON_DRAW || ly >= ICON_DRAW) return bg;
+  const uint8_t sx = static_cast<uint8_t>(static_cast<uint16_t>(lx) * ICON_SIZE / ICON_DRAW);
+  const uint8_t sy = static_cast<uint8_t>(static_cast<uint16_t>(ly) * ICON_SIZE / ICON_DRAW);
+  return slotIcons[index][sy * ICON_SIZE + sx];
+}
+
+void beeRedrawLabel(uint8_t index) {
+  const SlotConfig &slot = config.slots[index];
+  const int x = slotX[index];
+  const int y = slotY[index];
+  if (!slot.label[0]) {
+    drawKeyLabel(
+      "EMPTY", x + KEY_W / 2, y + (KEY_H - TEXT_H) / 2, 1,
+      config.theme.values[THEME_TEXT_MUTED]
+    );
+    return;
+  }
+  if (!slotHasIcon[index]) {
+    const uint16_t accent = mixColor(
+      slot.color, config.theme.values[THEME_SELECTED], SELECTED_MIX
+    );
+    drawKeyLabel(slot.label, x + KEY_W / 2, y + (KEY_H - TEXT_H) / 2, 1, accent);
+    return;
+  }
+  drawKeyLabel(
+    slot.label, x + KEY_W / 2, beeLabelTop(index), 1,
+    config.theme.values[THEME_TEXT]
+  );
+}
+
+void beeClamp(int16_t &x, int16_t &y) {
+  if (x < 0) x = 0;
+  if (y < 0) y = 0;
+  if (x > screenW - BEE_W) x = static_cast<int16_t>(screenW - BEE_W);
+  if (y > screenH - BEE_H) y = static_cast<int16_t>(screenH - BEE_H);
+}
+
+void beeMoveTo(int16_t nx, int16_t ny) {
+  beeClamp(nx, ny);
+  bee.x = nx;
+  bee.y = ny;
+  beeFace();
+}
+
+void eraseBee() {
+  if (!beePainted) return;
+  const uint8_t pose = beeAtFrame & 1;
+  uint8_t labels = 0;
+  for (uint8_t dy = 0; dy < BEE_H; dy++) {
+    for (uint8_t dx = 0; dx < BEE_W; dx++) {
+      if (!beeInkAt(dx, dy, pose, beeAtFacing)) continue;
+      const int px = beeAtX + dx;
+      const int py = beeAtY + dy;
+      if (px < 0 || px >= screenW || py < 0 || py >= screenH) continue;
+      const int8_t index = beeSlotAt(px, py);
+      gfx->drawPixel(px, py, beeUnderColor(px, py, index));
+      if (index >= 0 && py >= beeLabelTop(index) && py < beeLabelTop(index) + TEXT_H) {
+        labels = static_cast<uint8_t>(labels | (1 << index));
+      }
+    }
+  }
+  if (labels) {
+    for (uint8_t i = 0; i < TOTAL_APPS; i++) {
+      if (labels & static_cast<uint8_t>(1 << i)) beeRedrawLabel(i);
+    }
+  }
+  beePainted = false;
+}
+
+void paintBeeBox(int x, int y) {
+  const uint16_t gold = config.theme.values[THEME_ACCENT];
+  const uint16_t dark = config.theme.values[THEME_ACCENT_2];
+  const uint16_t wing = config.theme.values[THEME_TEXT];
+  const uint8_t pose = bee.frame & 1;
+  for (uint8_t dy = 0; dy < BEE_H; dy++) {
+    for (uint8_t dx = 0; dx < BEE_W; dx++) {
+      const int px = x + dx;
+      const int py = y + dy;
+      if (px < 0 || px >= screenW || py < 0 || py >= screenH) continue;
+      if (!beeInkAt(dx, dy, pose, bee.facing)) continue;
+      const uint8_t srcX = bee.facing == 0
+        ? static_cast<uint8_t>(BEE_W - 1 - dx)
+        : dx;
+      const uint32_t mask = 1ul << (BEE_W - 1 - srcX);
+      uint16_t color = gold;
+      if (BEE_STRIPE[dy] & mask) color = dark;
+      else if (BEE_WING[pose][dy] & mask) color = wing;
+      gfx->drawPixel(px, py, color);
+    }
+  }
+}
+
+void paintBee() {
+  if (bgEffect != BG_EFFECT_BEE || !displayReady) return;
+  paintBeeBox(bee.x, bee.y);
+  beeAtX = bee.x;
+  beeAtY = bee.y;
+  beeAtFrame = bee.frame;
+  beeAtFacing = bee.facing;
+  beePainted = true;
+}
+
+void placeBeeInAir() {
+  for (uint8_t t = 0; t < 40; t++) {
+    const int16_t x = static_cast<int16_t>(random(screenW - BEE_W));
+    const int16_t y = static_cast<int16_t>(random(screenH - BEE_H));
+    if (!beeHitsKey(x, y)) {
+      bee.x = x;
+      bee.y = y;
+      return;
+    }
+  }
+  bee.x = 2;
+  bee.y = 2;
+}
+
+void seedBee() {
+  randomSeed(micros() ^ (analogRead(A5) << 16) ^ millis());
+  bee.dx = 1;
+  bee.dy = 0;
+  bee.facing = 1;
+  bee.frame = 0;
+  bee.gait = 0;
+  bee.sit = 0;
+  bee.slot = 255;
+  bee.wobble = 0;
+  bee.hover = 0;
+  beePainted = false;
+  placeBeeInAir();
+  pickBeeTarget();
+  nextBeeFrame = 0;
+}
+
+void serviceBee(unsigned long now) {
+  if (sleeping) return;
+  if (bgEffect != BG_EFFECT_BEE) return;
+  if (!displayReady || drawing || pressedVisible) return;
+  if (iconStreamActive(now)) return;
+  if (fullRedrawPending || keyRedrawPending) return;
+  if (nextBeeFrame != 0 && !timeReached(now, nextBeeFrame)) return;
+  nextBeeFrame = now + BEE_FRAME_MS;
+
+  bee.wobble = static_cast<uint8_t>(bee.wobble + 1);
+  bee.gait = static_cast<uint8_t>(bee.gait + 1);
+  const uint8_t flap = bee.sit ? 4 : 2;
+  if (bee.gait >= flap) {
+    bee.gait = 0;
+    bee.frame = static_cast<uint8_t>((bee.frame + 1) & 1);
+  }
+
+  if (bee.sit) {
+    eraseBee();
+    bee.sit = static_cast<uint8_t>(bee.sit - 1);
+    if (!bee.sit) pickBeeTarget();
+    paintBee();
+    return;
+  }
+
+  eraseBee();
+
+  if (bee.slot != 255 && beeManhattan() <= 7) {
+    if (!bee.hover) bee.hover = static_cast<uint8_t>(6 + random(5));
+    bee.hover = static_cast<uint8_t>(bee.hover - 1);
+    if (!bee.hover) {
+      beeMoveTo(bee.tx, bee.ty);
+      bee.sit = static_cast<uint8_t>(26 + random(22));
+    }
+    paintBee();
+    return;
+  }
+
+  if (beeManhattan() <= 2) {
+    beeMoveTo(bee.tx, bee.ty);
+    pickBeeTarget();
+  }
+
+  beeSteer();
+  int16_t nx = static_cast<int16_t>(bee.x + bee.dx);
+  int16_t ny = static_cast<int16_t>(bee.y + bee.dy);
+  if (beeManhattan() > 48) {
+    nx = static_cast<int16_t>(nx + bee.dx);
+    ny = static_cast<int16_t>(ny + bee.dy);
+  }
+  beeMoveTo(nx, ny);
+  paintBee();
+}
+
 void requestFullRedraw() {
   fullRedrawPending = true;
 }
@@ -1340,6 +1716,7 @@ void serviceRedraw(unsigned long now) {
       drawKey(i);
       readSerial();
     }
+    paintBee();
     drawing = false;
     return;
   }
@@ -1353,6 +1730,7 @@ void serviceRedraw(unsigned long now) {
     drawKey(i);
     readSerial();
   }
+  paintBee();
   drawing = false;
 }
 
@@ -1648,6 +2026,7 @@ uint16_t stagedThemeCrc() {
 uint8_t parseBgEffect(const String &name) {
   if (name == "stars") return BG_EFFECT_STARS;
   if (name == "cat") return BG_EFFECT_CAT;
+  if (name == "bee") return BG_EFFECT_BEE;
   return BG_EFFECT_NONE;
 }
 
@@ -1790,6 +2169,8 @@ void endTheme(const String &line) {
     seedStars();
   } else if (bgEffect == BG_EFFECT_CAT) {
     seedCat();
+  } else if (bgEffect == BG_EFFECT_BEE) {
+    seedBee();
   }
 
   pressedVisible = false;
@@ -2338,5 +2719,6 @@ void loop() {
   serviceRedraw(now);
   serviceStars(now);
   serviceCat(now);
+  serviceBee(now);
   readTouch(now);
 }

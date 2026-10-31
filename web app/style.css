@@ -774,6 +774,20 @@
   display: block;
   image-rendering: pixelated;
 }
+.theme-tft-bee-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  overflow: hidden;
+}
+.theme-tft-bee {
+  position: absolute;
+  width: 10%;
+  aspect-ratio: 32 / 26;
+  display: block;
+  image-rendering: pixelated;
+}
 .theme-tft-chrome {
   position: relative;
   z-index: 1;
