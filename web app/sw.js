@@ -1,4 +1,4 @@
-const CACHE = "adeck-shell-47";
+const CACHE = "adeck-shell-47"; // bump when html/js/css change
 const SHELL = [
   "/",
   "/index.html",

@@ -26,7 +26,7 @@ REQUIREMENTS = BASE_DIR / "requirements.txt"
 INSTALL_FIRMWARE = PY_DIR / "install_firmware.py"
 WEB_DIR = BASE_DIR / "web app"
 APP_ICON = WEB_DIR / "adeck.ico"
-HEALTH_URL = "http://127.0.0.1:8765/api/status"
+HEALTH_URL = "http://127.0.0.1:8765/api/status"  # local service only
 WEB_URL = "http://127.0.0.1:8765/"
 SERVICE_NAME = "ADeck"
 PROTOCOL_REPLY = "ADECK_PONG\t2"
@@ -723,7 +723,7 @@ def terminate_deck_processes(debug: bool = False) -> None:
         debug_print(debug, f"terminating leftover deck process {pid}")
         run(["taskkill", "/PID", str(pid), "/F"], timeout=10)
 
-def cmd_stop(debug: bool = False) -> int:
+def cmd_stop(debug: bool = False) -> int:  # never leave this stopped after a flash
     exe = python_exe()
     if not DECK.is_file():
         print("deck.py is missing.")
@@ -759,7 +759,7 @@ def wait_until_ready(timeout: float = 30.0) -> dict | None:
         time.sleep(0.5)
     return None
 
-def cmd_start(open_browser: bool = True, debug: bool = False) -> int:
+def cmd_start(open_browser: bool = True, debug: bool = False) -> int:  # brings the ui back up
     if not VENV_PYTHONW.is_file():
         print("ADeck is not installed yet.")
         print("Run Setup ADeck.bat or choose Install / Repair.")

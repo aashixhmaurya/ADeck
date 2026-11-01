@@ -976,7 +976,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
         if debug_enabled():
             LOGGER.debug("%s - %s", self.address_string(), format % args)
 
-    def _host_allowed(self):
+    def _host_allowed(self):  # only this machine, not the lan
         host = self.headers.get("Host", "")
         try:
             return urlparse("//" + host).hostname in LOCAL_HOSTS
@@ -1148,7 +1148,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 },
             )
             return
-        if path == "/api/config":
+        if path == "/api/config":  # profiles live here
             if not self._api_allowed():
                 return
             config = self.server.store.snapshot()
@@ -1157,7 +1157,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 {"ok": True, "has_config": config is not None, "config": config},
             )
             return
-        if path == "/api/themes":
+        if path == "/api/themes":  # web falls back if this isn't here
             if not self._api_allowed():
                 return
             self._json(200, theme_payload())
@@ -1416,7 +1416,7 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 LOGGER.exception("Control request failed")
                 self._json(500, {"ok": False, "error": str(error)})
             return
-        if path == "/api/stop":
+        if path == "/api/stop":  # needs the local token, nothing else
             if not self._host_allowed() or not secrets.compare_digest(
                 self.headers.get("X-ADeck-Token", ""), self.server.control_token
             ):
@@ -1493,7 +1493,7 @@ class InstanceLock:
             self.handle.close()
             self.handle = None
 
-def _control_token():
+def _control_token():  # make one if this pc doesn't have it yet
     LOCAL_DATA_DIR.mkdir(parents=True, exist_ok=True)
     try:
         token = TOKEN_PATH.read_text(encoding="ascii").strip()

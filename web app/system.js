@@ -1,6 +1,6 @@
 "use strict";
 
-function registerServiceWorker() {
+function registerServiceWorker() { // bump CACHE in sw.js when the shell files change
   if (!("serviceWorker" in navigator)) return;
   if (!/^https?:$/.test(window.location.protocol)) return;
   navigator.serviceWorker.register("./sw.js").catch(() => {});
@@ -104,7 +104,7 @@ function renderOfflineOverlay() {
 }
 
 function showOfflineOverlay() {
-  if (!els.offlineOverlay || state.backend.exploreOffline) return;
+  if (!els.offlineOverlay || state.backend.exploreOffline) return; // try anyway already said go
   renderOfflineOverlay();
   els.offlineOverlay.hidden = false;
 }
@@ -720,7 +720,7 @@ function wireSystemEvents() {
     });
   }
   if (els.offlineAnywayBtn) {
-    els.offlineAnywayBtn.addEventListener("click", () => {
+    els.offlineAnywayBtn.addEventListener("click", () => { // hosted visitors just want to look around
       state.backend.exploreOffline = true;
       hideOfflineOverlay();
       applyActiveDeckTheme();
@@ -1141,7 +1141,7 @@ function tickClock() {
 
 async function boot() {
   loadSettings();
-  await loadThemes();
+  await loadThemes(); // themes before first paint so the list isn't empty
   const hadLocalConfig = loadProfiles();
   if (!hadLocalConfig) seed();
   const backend = await fetchConfigFromBridge();

@@ -30,7 +30,7 @@ CLI_DOWNLOAD_URL = (
     "https://downloads.arduino.cc/arduino-cli/"
     "arduino-cli_latest_Windows_64bit.zip"
 )
-TARGET_FQBN = "arduino:renesas_uno:unor4wifi"
+TARGET_FQBN = "arduino:renesas_uno:unor4wifi"  # uno r4 wifi, nothing else
 TARGET_CORE = "arduino:renesas_uno"
 REQUIRED_LIBRARIES = ("GFX Library for Arduino", "Adafruit TouchScreen")
 HEALTH_URL = "http://127.0.0.1:8765/api/status"

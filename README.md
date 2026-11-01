@@ -1,300 +1,87 @@
-# ADeck
+# adeck
+
+a local stream deck for the desk but it is an arduino uno r4 wifi with a 2.4 inch ili9341 touch screen. you set six keys in a web app on your pc then the board shows them and when you tap a key the pc runs that app or command.
+
+you can make a few profiles switch themes and pick a sleep screen. the active setup is saved on the board in eeprom so it comes back after unplug or reset.
+
+there is also a hosted web page for people who do not have the board. they can press try anyway and look around. the real pad still needs the uno on usb.
+
+## heres the demo
+
+https://youtu.be/hYH821wEFZI
+
+## install
+
+- download the zip and extract the folder to somewhere easy like the desktop
+- open the extracted folder you should see setup adeck.bat and start adeck.bat
+- plug in the uno r4 wifi with a data usb cable and close arduino serial monitor if it is open
+- double click setup adeck.bat and wait until it says adeck is ready
+- setup makes the python stuff flashes the board if needed and puts an adeck icon on the desktop
+- after that just open the adeck desktop icon or start adeck.bat you do not run setup every time
+- if something fails open adeck-control.bat and pick check system or install / repair
+
+## how to use
+
+- after install the web app opens at http://127.0.0.1:8765
+- pick a profile on the left then click the slot you want to fill. there are six slots top left is 1 then across and down
+- the app list is fetched from this windows pc so installed apps show up on their own. click add and pick one
+- you can also type a command yourself like notepad or explorer or git status
+- git commands work the same way. put git status git add git commit git push or git pull on a slot then tap that key on the tft
+- set the label you want on the screen and a color if you like
+- press save so the board gets the new layout
+- tap that key on the tft and the pc runs it
+- tft theme is only the board background. space has slow stars cat walks the gaps around the keys and bee flies then sits on an icon
+- appearance is only the web page colors not the tft
+- sleep is on the settings page. pick how long to wait then black screen or a custom image
+- if you open the hosted site and see service is not running press try anyway to explore the ui
+
+## tft themes
+
+- space is the default. dark screen with drifting stars behind the keys
+- cat is a small cat that walks the empty space around the keys
+- bee is a honeybee that flies around then lands on top of an app icon
+- pick the theme on the dashboard then apply and save so the board uses it
+
+## appearance
+
+- this only changes the web app look. the tft stays on the theme you picked above
+- there are four looks classic red and red code cactus and oled
+- classic is the normal adeck colors
+- red and red is dark panels with red accents
+- code cactus is cream page with rose selection
+- oled is pure black and dark blue and it stays dark
+- the idea for these web looks came from the hackatime website
+
+## sleep
+
+- the tft goes to sleep after you leave it alone. you can pick 30 seconds 1 minute 5 minutes or never
+- touch anywhere on the screen to wake it
+- black screen is the default. the display just goes black
+- custom image lets you add a png or jpg. it is resized small and shown when the pad sleeps
+- save settings after you pick the image so the board has it
+
+## hardware used
+
+- windows 10 or 11
+- arduino uno r4 wifi
+- 2.4 inch ili9341 tft with resistive touch
+- a data usb cable not a charge only one
+
+## features
+
+- six keys in a 3 by 2 layout
+- more than one profile saved on the pc
+- windows apps are fetched automatically so you can drop them on a slot
+- git status add commit push and pull can sit on a key and run from a tap
+- any other command you type also works
+- labels colors and icons sync to the tft over usb
+- tft background colour is customizable so you can pick whatever you want
+- three tft themes space cat and bee
+- four web appearances classic red and red code cactus and oled
+- sleep timeout with black screen or a custom image
+- rotate the display if you want
+- local web app no internet needed
+- hosted page so others can look without a board
+- settings stay in appdata not in the repo
+- board config stays in eeprom after restart
 
-A little Stream Deck for your desk — but it's an Arduino UNO R4 WiFi with a 2.4" touchscreen. You edit six buttons in a local web app (labels, colors, Windows commands). Commands run on your PC; the board just stores what to show on the TFT.
-
-## Features
-
-- Six customizable buttons with labels and colors
-- Multiple profiles, saved locally
-- Touch the screen → runs the mapped command on Windows
-- Installs as a desktop app (own window, desktop + Start Menu icon) — no URL typing
-- System page in the app: status, restart, reconnect, repair, firmware, logs
-- Web UI at `http://127.0.0.1:8765` — no internet needed
-- Auto-detects the UNO R4 WiFi COM port (no hardcoded COM3 nonsense)
-- Save in the browser syncs config to the board over USB
-- Survives unplug/replug and board resets (EEPROM on the Arduino side)
-
-## Hardware
-
-You need:
-
-- Windows 10 or 11
-- Arduino **UNO R4 WiFi** (other UNO models won't work)
-- 2.4" ILI9341 display + resistive touch, wired per `firmware/ADeck/ADeck.ino`
-- A **data** USB cable (charge-only cables are useless here)
-
-Board FQBN: `arduino:renesas_uno:unor4wifi`
-
-## How it works
-
-```
-Browser (index.html)  →  deck.py (:8765)  →  USB serial  →  UNO R4 WiFi  →  TFT
-```
-
-1. `deck.py` is the local backend. It serves the web UI, holds your profiles, and talks to the board.
-2. The firmware on the UNO draws buttons and listens for touch.
-3. When you hit Save, config goes serial → board → screen updates.
-4. When you touch a button, the board sends `PRESS` over serial and `deck.py` runs your Windows command.
-
-Protocol handshake: `ADECK_PING` / `ADECK_PONG` (version 2).
-
-## Project structure
-
-```text
-ADeck-Control.bat          control menu (start, check, repair, logs…)
-Setup ADeck.bat            first-time installer
-Start ADeck.bat            daily launcher (browser fallback)
-adeck.bat                  alias for ADeck-Control.bat
-
-deck.py                    backend + serial bridge
-adeck_control.py           CLI for the control menu
-install_firmware.py        flash / verify UNO firmware
-install.ps1                setup script (called by Setup ADeck.bat)
-
-ADeck Web app/             local UI served by deck.py
-  index.html
-  script.js
-  style.css
-  manifest.webmanifest     installable app window
-  sw.js                    app-shell cache (never caches /api)
-  icon-192.png             app icons (add these for PWA / shortcuts)
-  icon-512.png
-  icon-maskable-512.png
-  adeck.ico                Windows shortcut / favicon
-
-firmware/ADeck/ADeck.ino   Arduino sketch (canonical firmware)
-
-requirements.txt
-test_reliability.py
-```
-
-Generated at runtime (gitignored): `.venv/`, `.tools/`, `.build/`
-
-User data lives outside the repo:
-
-```text
-%APPDATA%\ADeck\config.json       profiles
-%LOCALAPPDATA%\ADeck\             logs, runtime lock, board identity
-```
-
-## Install
-
-1. Plug in the UNO R4 WiFi with a data cable.
-2. Close Arduino Serial Monitor and anything else using the COM port.
-3. Double-click **Setup ADeck.bat**.
-4. Wait for "ADeck is ready" with Web and Hardware status.
-5. ADeck opens in its own app window, and you get an **ADeck** icon on the desktop and in the Start Menu.
-
-That's it. You don't need to know Python.
-
-Setup also registers the `adeck://` handler so the app can start the service on demand.
-To add ADeck as a browser-installed app too, use **INSTALL APP** on the System page (or your
-browser's "Install ADeck" menu item).
-
-Manual install if you prefer:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\install.ps1
-```
-
-Setup creates `.venv`, installs deps, bundles Arduino CLI if needed, flashes firmware only when `ADECK_PONG` isn't already working, starts the backend, and adds a Windows Startup shortcut — but only if everything actually passes.
-
-## Daily use
-
-Open the **ADeck** icon (desktop or Start Menu). It starts the service if needed and opens the
-app window. After a good install, ADeck also starts with Windows.
-
-Everything normal lives in the app's **System** page:
-
-| Section | What you can do |
-| --- | --- |
-| Status | service, hardware, COM port, firmware, sync, config, setup state |
-| Device | reconnect the board, pin a COM port, resync to device |
-| Service control | restart, stop, view log, open log folder |
-| Desktop app | install app window, create desktop icon, start with Windows |
-| Advanced | Check System, Show Errors, Install / Repair, Reinstall Firmware |
-
-Output from Check System / Repair / Firmware / Restart streams into the app, and keeps streaming
-while the service restarts.
-
-Fallbacks (still supported, no longer the normal path):
-
-- **Start ADeck.bat** — starts the backend if needed, opens the browser when ready
-- **ADeck-Control.bat** — the same maintenance from a terminal menu
-
-Control menu:
-
-```text
-[1] Start ADeck
-[2] Check System
-[3] Install / Repair
-[4] Reinstall Firmware
-[5] View Logs
-[6] Stop ADeck
-[7] Show Latest Errors
-[8] Status Summary
-[9] Exit
-```
-
-Save in the web UI updates local config and pushes the active profile to the TFT. If USB is unplugged, the UI still works — it'll resync when the board comes back.
-
-## Troubleshooting
-
-First move: open ADeck → **System** page. The banner at the top names the problem and offers the
-matching action. **Check System** there prints the same report as the control menu.
-
-If the app window says "ADeck service is not running", use **START SERVICE** (uses `adeck://`), or
-open the ADeck desktop icon. The window itself loads from cache, so it can explain the state even
-while the service is down.
-
-Terminal fallback: **ADeck-Control.bat → Check System**.
-
-Quick checks:
-
-```powershell
-.\.venv\Scripts\python.exe .\adeck_control.py check
-.\.venv\Scripts\python.exe .\adeck_control.py status
-curl http://127.0.0.1:8765/api/status
-```
-
-## Firmware update
-
-Normal installs skip reflash if firmware already responds to `ADECK_PONG`.
-
-To force a reflash: **ADeck-Control.bat → Reinstall Firmware**
-
-Or from a terminal:
-
-```powershell
-.\.venv\Scripts\python.exe .\install_firmware.py
-.\.venv\Scripts\python.exe .\install_firmware.py --if-needed
-.\.venv\Scripts\python.exe .\install_firmware.py --cli-only
-```
-
-## Common problems
-
-**"Python was not found"** — run Setup ADeck.bat first.
-
-**Board not detected** — data cable, only one UNO connected, close Serial Monitor.
-
-**Backend up but hardware offline** — unplug/replug USB, then Check System or Install / Repair.
-
-**Port already in use / stale runtime** — Control → Stop, then Start. If that fails, Install / Repair.
-
-**Opening index.html directly** — won't work. You need `deck.py` running on :8765. Use Start ADeck.bat.
-
-## Recovery
-
-If automatic 1200-bps bootloader recovery fails during firmware install:
-
-1. Double-press the UNO R4 WiFi **RESET** button.
-2. Press Enter at the installer prompt right away.
-3. Keep USB plugged in (~20 seconds while it scans).
-
-Still stuck? Control → Reinstall Firmware. Don't swap in a different Arduino model or guess a COM port.
-
-Nuclear option:
-
-```powershell
-# stop backend
-.\.venv\Scripts\python.exe .\adeck_control.py stop
-# remove generated stuff, then rerun Setup
-Remove-Item -Recurse -Force .venv, .tools, .build -ErrorAction SilentlyContinue
-.\Setup ADeck.bat
-```
-
-## Logs
-
-Logs live in `%LOCALAPPDATA%\ADeck\`:
-
-- `adeck.log` — main app log
-- `runtime.stdout.log` / `runtime.stderr.log` — backend process output
-
-Control menu → **View Logs** opens that folder. **Show Latest Errors** prints recent error lines without dumping full tracebacks at you.
-
-## COM auto-detect
-
-No hardcoded COM ports. Detection uses Arduino CLI board list (VID/PID, serial number) and falls back through available ports. The backend re-discovers the board after USB reconnect. Board identity is cached in `%LOCALAPPDATA%\ADeck\board.json`.
-
-## Git clone
-
-```powershell
-git clone <your-repo-url> ADeck
-cd ADeck
-.\Setup ADeck.bat
-```
-
-Don't commit `.venv`, `.tools`, or `.build` — they're in `.gitignore`.
-
-## Developer section
-
-Debug logging:
-
-```powershell
-$env:ADECK_DEBUG = "1"
-.\.venv\Scripts\python.exe .\adeck_control.py check --debug
-.\.venv\Scripts\python.exe .\deck.py --debug
-```
-
-Backend control:
-
-```powershell
-.\.venv\Scripts\python.exe .\adeck_control.py start
-.\.venv\Scripts\python.exe .\adeck_control.py stop
-.\.venv\Scripts\python.exe .\adeck_control.py restart
-.\.venv\Scripts\python.exe .\adeck_control.py repair
-```
-
-Desktop app integration:
-
-```powershell
-.\.venv\Scripts\python.exe .\adeck_control.py app          # start service + app window
-.\.venv\Scripts\python.exe .\adeck_control.py shortcuts    # desktop + Start Menu icons
-.\.venv\Scripts\python.exe .\adeck_control.py autostart     # --disable to turn off
-.\.venv\Scripts\python.exe .\adeck_control.py protocol      # register adeck://
-.\.venv\Scripts\python.exe .\adeck_control.py integrate     # all of the above
-```
-
-API used by the System page (localhost, same-origin only):
-
-```text
-GET  /api/status          service + device state
-GET  /api/system          service, device, ports, config, environment, integration
-GET  /api/logs?source=app|stdout|stderr&lines=N
-GET  /api/tasks           recent maintenance tasks
-GET  /api/tasks/<id>      one task with live output
-POST /api/control         {"action": "reconnect|resync|open-logs|restart|stop|check|
-                            errors|repair|reinstall-firmware|autostart-on|autostart-off|
-                            create-shortcuts|remove-shortcuts|register-protocol"}
-```
-
-Run tests:
-
-```powershell
-.\.venv\Scripts\python.exe -m py_compile deck.py adeck_control.py install_firmware.py
-.\.venv\Scripts\python.exe -m unittest test_reliability.py
-```
-
-JS syntax check:
-
-```powershell
-node --check ".\ADeck Web app\script.js"
-```
-
-## From-scratch verification
-
-Handy checklist if you're changing something big:
-
-- Delete `.venv`, `.tools`, `.build`, and the ADeck Startup shortcut
-- Run Setup ADeck.bat with hardware connected — every stage should pass
-- Confirm the ADeck desktop/Start Menu icon opens the app window (no browser tab)
-- Stop the service, reopen the app window — it must load and explain the state, not error out
-- Confirm `ADECK_PONG 2` after a required flash
-- Confirm `/api/status` is healthy with `connected: true`
-- Save a six-button profile, confirm TFT ACK
-- Reset the board — EEPROM labels/colors should survive
-- Press each touch target — commands should fire
-- Disconnect/reconnect USB — rediscovery + resync
-- Re-run install — healthy firmware should NOT get reflashed
-- Run Start ADeck.bat twice — only one backend instance
-- Break something on purpose — installer should NOT claim success, open browser, or create Startup shortcut

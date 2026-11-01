@@ -6,7 +6,7 @@ const SLOTS_PER_PROFILE = 6;
 const LABEL_MAX = 10;
 const COMMAND_MAX = 256;
 const PROFILE_NAME_MAX = 32;
-const STORAGE_KEY = "adeck.cfg.v1";
+const STORAGE_KEY = "adeck.cfg.v1"; // browser copy, the board has its own
 const LEGACY_STORAGE_KEY = "macropad.cfg.v1";
 const SETTINGS_KEY = "adeck.settings.v1";
 const DEFAULT_COLOR = "#c5c5c3";
@@ -328,7 +328,7 @@ function isFlippedRotation(rotation) {
   return r === 2 || r === 3;
 }
 
-function makeProfile(name) {
+function makeProfile(name) { // empty 6-key workspace
   return {
     id: newProfileId(),
     name: String(name || "Untitled").slice(0, PROFILE_NAME_MAX),
@@ -575,11 +575,12 @@ const els = {
 let dialogState = null;
 
 function hostedExplore() {
+  // vercel / github pages — no local service
   return !["127.0.0.1", "localhost"].includes(window.location.hostname);
 }
 
 function seed() {
-  const demo = hostedExplore();
+  const demo = hostedExplore(); // hosted gets a filled dummy deck
   const first = makeProfile(demo ? "Workspace" : "Dev Mode");
   if (demo) {
     first.theme = "bee";
@@ -645,7 +646,7 @@ function loadProfiles() {
   }
 }
 
-function persistProfiles() {
+function persistProfiles() { // keep edits even if the board is unplugged
   try {
     localStorage.setItem(
       STORAGE_KEY,
@@ -837,7 +838,7 @@ function refreshSlotUI() {
 
 const DEFAULT_DECK_THEME = "adeck-classic";
 const THEMES_CACHE_KEY = "adeck.themes.v4";
-const BUILTIN_THEMES = {
+const BUILTIN_THEMES = { // same three themes if /api/themes is missing
   ok: true,
   default: "adeck-classic",
   order: ["adeck-classic", "cat", "bee"],
@@ -941,7 +942,7 @@ function deckThemeShort(themeId) {
 async function loadThemes() {
   let payload = null;
   try {
-    const res = await fetchWithTimeout("/api/themes", {}, 4000);
+    const res = await fetchWithTimeout("/api/themes", {}, 4000); // local first, then cache, then builtin
     if (res && res.ok) payload = await res.json();
   } catch (err) {
     payload = null;
@@ -1042,7 +1043,7 @@ function applyAppearance(id) {
   toast("APPEARANCE " + appearanceLabel(state.settings.appearance), "info");
 }
 
-function applyDeckTheme(themeId) {
+function applyDeckTheme(themeId) { // colours only, tft animals live on the board
   const roots = themeVarRoots();
   const root = document.documentElement;
   const theme = deckTheme(themeId);

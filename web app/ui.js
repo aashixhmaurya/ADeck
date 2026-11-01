@@ -16,7 +16,7 @@ function dismissToast(node) {
   }, TOAST_OUT);
 }
 
-function toast(message, type) {
+function toast(message, type) { // one toast at a time, don't stack them
   if (!els.toastHost) return;
   if (toastTimer) {
     clearTimeout(toastTimer);
@@ -124,7 +124,7 @@ const localBridge =
   /^https?:$/.test(window.location.protocol) &&
   ["127.0.0.1", "localhost"].includes(window.location.hostname)
     ? window.location.origin
-    : "http://127.0.0.1:8765";
+    : "http://127.0.0.1:8765"; // hosted pages still talk to the pc if it's running
 
 async function fetchWithTimeout(url, options, timeoutMs) {
   const controller = new AbortController();
@@ -161,7 +161,7 @@ async function postConfigToBridge(config) {
   }
 }
 
-async function fetchConfigFromBridge() {
+async function fetchConfigFromBridge() { // miss is fine, we already have localStorage
   try {
     const response = await fetchWithTimeout(
       localBridge + "/api/config",
@@ -241,7 +241,7 @@ function syncActiveProfile() {
   return profileSyncChain;
 }
 
-async function pollBridgeStatus() {
+async function pollBridgeStatus() { // every couple seconds, don't hammer it
   let status = null;
   try {
     const response = await fetchWithTimeout(
@@ -917,7 +917,7 @@ function renderThemeCards() {
   if (!list.length) {
     const note = document.createElement("p");
     note.className = "field-hint mono muted";
-    note.textContent = "Theme list unavailable — the ADeck service has not answered.";
+    note.textContent = "Theme list unavailable — the ADeck service has not answered."; // shouldn't hit this anymore
     els.themeList.appendChild(note);
     return;
   }
@@ -1083,7 +1083,7 @@ function themeBeeSvgMarkup(face, pose, gold, dark, wing) {
   );
 }
 
-function startThemeBeeFly(layer, gold, dark, wing, portrait) {
+function startThemeBeeFly(layer, gold, dark, wing, portrait) { // preview only, tft has its own sprite
   if (layer._beeTimer) {
     clearInterval(layer._beeTimer);
     layer._beeTimer = 0;

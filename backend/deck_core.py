@@ -22,7 +22,7 @@ PROTOCOL_VERSION = "2"
 PY_DIR = Path(__file__).resolve().parent
 BASE_DIR = PY_DIR.parent
 WEB_DIR = BASE_DIR / "web app"
-DATA_DIR = Path(os.environ.get("APPDATA", Path.home())) / "ADeck"
+DATA_DIR = Path(os.environ.get("APPDATA", Path.home())) / "ADeck"  # stays off the repo
 LOCAL_DATA_DIR = (
     Path(os.environ["LOCALAPPDATA"]) / "ADeck"
     if os.environ.get("LOCALAPPDATA")
@@ -31,7 +31,7 @@ LOCAL_DATA_DIR = (
 CONFIG_PATH = DATA_DIR / "config.json"
 
 IDENTITY_PATH = LOCAL_DATA_DIR / "board.json"
-TOKEN_PATH = LOCAL_DATA_DIR / "control.token"
+TOKEN_PATH = LOCAL_DATA_DIR / "control.token"  # local stop token, not a cloud key
 RUNTIME_PATH = LOCAL_DATA_DIR / "runtime.json"
 LOCK_PATH = LOCAL_DATA_DIR / "runtime.lock"
 LOG_PATH = LOCAL_DATA_DIR / "adeck.log"
@@ -63,7 +63,7 @@ VALID_ROTATIONS = frozenset({0, 1, 2, 3})
 
 _ROTATION_DEGREES = {1: 0, 0: 90, 2: 180, 3: 270}
 
-_THEMES = [
+_THEMES = [  # space, then cat, then bee — keep this order
     {
         "id": "adeck-classic",
         "name": "Space",
@@ -304,7 +304,7 @@ def theme_bg_effect(theme_id):
     effect = str(theme_for(theme_id).get("bgEffect") or "").strip().lower()
     return effect if effect in {"stars", "cat", "bee"} else ""
 
-def theme_payload():
+def theme_payload():  # what /api/themes sends the dashboard
     return {
         "ok": True,
         "default": DEFAULT_THEME_ID,

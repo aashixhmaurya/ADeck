@@ -20,6 +20,7 @@ desktop.ini
 *~
 .env
 .env.*
+# keep keys and tokens out of github
 *.pem
 *.key
 *.p12

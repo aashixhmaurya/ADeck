@@ -3,6 +3,7 @@
 #include <TouchScreen.h>
 #include <stddef.h>
 
+// cheap resistive touch, same pins as the shield
 #define YP A3
 #define XM A2
 #define YM 9
@@ -16,9 +17,9 @@
 #define TS_MAXY 920
 
 const uint32_t CONFIG_MAGIC = 0x41444543;
-const uint8_t CONFIG_VERSION = 4;
+const uint8_t CONFIG_VERSION = 4; // bump this if the eeprom layout changes
 const uint8_t PROTOCOL_VERSION = 2;
-const uint8_t TOTAL_APPS = 6;
+const uint8_t TOTAL_APPS = 6; // 3x2 on the 2.4" screen
 const uint8_t LABEL_SIZE = 11;
 
 const uint8_t APP_W = 90;
@@ -26,7 +27,7 @@ const uint8_t APP_H = 90;
 const uint8_t ICON_SIZE = 32;
 
 
-const uint8_t ICON_DRAW = 72;
+const uint8_t ICON_DRAW = 72; // 32px icons get scaled up here
 const uint8_t ICON_BITMAP = ICON_DRAW;
 const uint8_t ICON_INSET = 0;
 const uint8_t ICON_BAND = 2;
@@ -34,14 +35,14 @@ const uint8_t ICON_GAP = 10;
 const uint8_t TEXT_H = 8;
 const unsigned long ICON_STREAM_IDLE_MS = 120;
 const unsigned long ICON_RECV_TIMEOUT_MS = 2000;
-const uint8_t SLEEP_W = 128;
+const uint8_t SLEEP_W = 128; // sleep pic is small, ram is tight
 const uint8_t SLEEP_H = 96;
 const uint8_t SLEEP_CHUNK = 16;
 const uint8_t SLEEP_MODE_BLACK = 0;
 const uint8_t SLEEP_MODE_IMAGE = 1;
 
 
-int16_t screenW = 320;
+int16_t screenW = 320; // landscape unless they rotate it
 int16_t screenH = 240;
 uint8_t displayRotation = 1;
 uint8_t gridCols = 3;
@@ -76,14 +77,14 @@ const uint8_t THEME_COUNT = 7;
 const uint8_t BG_EFFECT_NONE = 0;
 const uint8_t BG_EFFECT_STARS = 1;
 const uint8_t BG_EFFECT_CAT = 2;
-const uint8_t BG_EFFECT_BEE = 3;
+const uint8_t BG_EFFECT_BEE = 3; // last tft theme, after cat
 
 const uint8_t STAR_COUNT = 16;
 const uint8_t STAR_SIZE = 2;
 const uint8_t STAR_MIN_SEP = 34;
 const unsigned long STAR_FRAME_MS = 80;
 
-const uint8_t CAT_W = 16;
+const uint8_t CAT_W = 16; // stays in the gutters, don't make it bigger
 const uint8_t CAT_H = 16;
 const unsigned long CAT_FRAME_MS = 70;
 const uint16_t CAT_BODY[2][16] = {
@@ -99,7 +100,7 @@ const uint16_t CAT_UP[2][16] = {
   { 0x0200, 0x0300, 0x0240, 0x0660, 0x0FF8, 0x0FF8, 0x07F0, 0x07F0, 0x03E0, 0x05D0, 0x0550, 0x0220, 0x0630, 0x0000, 0x0000, 0x0000 }
 };
 
-const uint8_t BEE_W = 32;
+const uint8_t BEE_W = 32; // overlaps keys, so erase has to be careful
 const uint8_t BEE_H = 26;
 const unsigned long BEE_FRAME_MS = 60;
 const uint32_t BEE_BODY[26] = {
@@ -212,7 +213,7 @@ struct PersistentRecord {
   uint16_t crc;
 };
 
-int16_t slotX[TOTAL_APPS] = {15, 115, 215, 15, 115, 215};
+int16_t slotX[TOTAL_APPS] = {15, 115, 215, 15, 115, 215}; // landscape 3x2
 int16_t slotY[TOTAL_APPS] = {20, 20, 20, 130, 130, 130};
 const uint16_t RECORD_SLOT_1 = RECORD_SLOT_0 + sizeof(PersistentRecord);
 
@@ -619,7 +620,7 @@ void drawKeyIcon(uint8_t index, int x, int y) {
   }
 }
 
-void drawKey(uint8_t index) {
+void drawKey(uint8_t index) { // icon + label, full key redraw
   const SlotConfig &slot = config.slots[index];
   const int x = cardX(index);
   const int y = cardY(index);
@@ -1249,7 +1250,7 @@ void placeCatInGutter() {
   }
 }
 
-void seedCat() {
+void seedCat() { // pick a lane and start walking
   randomSeed(micros() ^ (analogRead(A5) << 16) ^ millis());
   buildCatLanes();
   cat.zone = 255;
@@ -1301,7 +1302,7 @@ void paintCatBox(int x, int y, bool spriteOnly) {
   }
 }
 
-void paintCat() {
+void paintCat() { // last drawn pose, facing included
   if (bgEffect != BG_EFFECT_CAT || !displayReady) return;
   paintCatBox(cat.x, cat.y, true);
 }
@@ -1407,7 +1408,7 @@ int16_t beeManhattan() {
   return static_cast<int16_t>(dx + dy);
 }
 
-void beePerchOn(uint8_t index, int16_t &x, int16_t &y) {
+void beePerchOn(uint8_t index, int16_t &x, int16_t &y) { // sit on the icon, not inside it
   const int ix = slotX[index] + (KEY_W - ICON_DRAW) / 2;
   const int span = ICON_DRAW > BEE_W + 8 ? ICON_DRAW - BEE_W - 8 : 1;
   int px = ix + 4 + static_cast<int>(random(span));
@@ -1548,7 +1549,7 @@ void beeMoveTo(int16_t nx, int16_t ny) {
   beeFace();
 }
 
-void eraseBee() {
+void eraseBee() { // put back whatever was under the last pose
   if (!beePainted) return;
   const uint8_t pose = beeAtFrame & 1;
   uint8_t labels = 0;
@@ -1699,7 +1700,7 @@ void requestKeyRedraw(uint8_t index) {
   keyRedrawPending |= static_cast<uint8_t>(1 << index);
 }
 
-void serviceRedraw(unsigned long now) {
+void serviceRedraw(unsigned long now) { // don't draw while a press splash is up
   if (sleeping) return;
   if (!displayReady || drawing || pressedVisible) return;
   if (!fullRedrawPending && !keyRedrawPending) return;
@@ -2353,7 +2354,7 @@ void paintSleepPixel(uint8_t x, uint8_t y, uint16_t color) {
   gfx->fillRect(x0, y0, w, h, color);
 }
 
-void enterSleep() {
+void enterSleep() { // black or the custom pic, then wait for a tap
   if (sleeping) return;
   sleeping = true;
   if (displayReady) gfx->fillScreen(0x0000);
@@ -2654,7 +2655,7 @@ void readTouch(unsigned long now) {
 }
 
 void setup() {
-  Serial.begin(115200);
+  Serial.begin(115200); // usb to the pc, not wifi
   serialLine.reserve(SERIAL_LINE_MAX + 1);
   transactionId.reserve(16);
 
@@ -2719,6 +2720,6 @@ void loop() {
   serviceRedraw(now);
   serviceStars(now);
   serviceCat(now);
-  serviceBee(now);
+  serviceBee(now); // paint after keys so it sits on top
   readTouch(now);
 }
